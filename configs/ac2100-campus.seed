@@ -1,0 +1,90 @@
+# =====================================================================
+#  红米 AC2100 · 校园网防检测专用固件配置
+#
+#  目标：把"一个账号下多台设备上网"的痕迹，统一伪装成"只有一台设备"，
+#        绕过校园网的共享上网检测（TTL 检测 / UA 指纹统计 / 时钟偏移）。
+#
+#  内置（不是在线装，刷完就有）：
+#    · UA3F   主引擎：改 UA + 固定 TTL + 清 TCP 时间戳 + IPID 归零
+#    · UA2F   备引擎：内核态改 UA（轻量，和 UA3F 二选一）
+#    · 「UA 防检测中心」LuCI 面板：两个引擎一键切换 + 人格选择
+#    · 「顺枫公寓自动登录」netcheck：掉线自动重登，账号已预填
+#
+#  改包名：行首加 # 就是删掉，去掉 # 就是加上。
+# =====================================================================
+
+# ---------- 1. 目标设备（不要动） ----------
+CONFIG_TARGET_ramips=y
+CONFIG_TARGET_ramips_mt7621=y
+CONFIG_TARGET_ramips_mt7621_DEVICE_xiaomi_redmi-router-ac2100=y
+
+# ---------- 2. LuCI 基础 ----------
+# luci-compat 必须要：UA3F 的界面和「UA 防检测中心」都是 Lua 写的
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-ssl=y
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_luci-app-package-manager=y
+CONFIG_PACKAGE_luci-mod-dashboard=y
+
+# ---------- 3. 中文界面 ----------
+CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-dashboard-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-commands-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-attendedsysupgrade-zh-cn=y
+
+# ---------- 3b. Argon 主题（支持 24.10，暗色好看，带自己的设置页）----------
+# 主题目录 /www/luci-static/argon；设置页在「系统 → Argon 主题设置」
+CONFIG_PACKAGE_luci-theme-argon=y
+CONFIG_PACKAGE_luci-app-argon-config=y
+CONFIG_PACKAGE_luci-i18n-argon-config-zh-cn=y
+
+# ---------- 4. UA3F 的运行依赖（透明代理 + 改包） ----------
+CONFIG_PACKAGE_ipset=y
+CONFIG_PACKAGE_kmod-ipset=y
+CONFIG_PACKAGE_kmod-ipt-ipset=y
+CONFIG_PACKAGE_iptables=y
+CONFIG_PACKAGE_iptables-mod-tproxy=y
+CONFIG_PACKAGE_iptables-mod-extra=y
+CONFIG_PACKAGE_iptables-mod-ipopt=y
+CONFIG_PACKAGE_iptables-mod-nfqueue=y
+CONFIG_PACKAGE_iptables-mod-conntrack-extra=y
+CONFIG_PACKAGE_kmod-nf-conntrack-netlink=y
+CONFIG_PACKAGE_kmod-nft-queue=y
+CONFIG_PACKAGE_kmod-nft-tproxy=y
+CONFIG_PACKAGE_ip-full=y
+
+# ---------- 5. UA2F 备选方案需要的库 ----------
+CONFIG_PACKAGE_libgcc1=y
+CONFIG_PACKAGE_libnetfilter-conntrack3=y
+CONFIG_PACKAGE_libnetfilter-queue1=y
+CONFIG_PACKAGE_libmnl0=y
+CONFIG_PACKAGE_libnfnetlink0=y
+CONFIG_PACKAGE_libatomic1=y
+CONFIG_PACKAGE_kmod-nfnetlink=y
+CONFIG_PACKAGE_kmod-nfnetlink-queue=y
+
+# ---------- 6. 顺枫公寓自动登录（netcheck）需要 ----------
+CONFIG_PACKAGE_curl=y
+CONFIG_PACKAGE_ca-bundle=y
+CONFIG_PACKAGE_ca-certificates=y
+
+# ---------- 7. 排错工具 ----------
+CONFIG_PACKAGE_tcpdump=y
+CONFIG_PACKAGE_luci-app-ttyd=y
+CONFIG_PACKAGE_luci-app-commands=y
+CONFIG_PACKAGE_openssh-sftp-server=y
+CONFIG_PACKAGE_htop=y
+CONFIG_PACKAGE_nano=y
+
+# ---------- 8. 让 busybox 带 cryptpw（首次开机自动设 root 密码用） ----------
+CONFIG_BUSYBOX_CONFIG_CRYPTPW=y
+
+# ---------- 9. 可选：如果确认学校有 DPI，再解锁做加密代理分流 ----------
+# CONFIG_PACKAGE_luci-app-nikki=y          # mihomo 内核，配合 configs/clash-ua3f.yaml
+# CONFIG_PACKAGE_luci-app-openclash=y
+# CONFIG_PACKAGE_luci-theme-argon=y
+# CONFIG_PACKAGE_luci-app-argon-config=y
+# CONFIG_PACKAGE_luci-app-adguardhome=y
