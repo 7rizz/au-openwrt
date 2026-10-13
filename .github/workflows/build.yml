@@ -131,11 +131,7 @@ jobs:
         run: |
           mkdir -p openwrt/files
           cp -a device-files/. openwrt/files/
-          # slows this MT7621 down badly. Install its offline ipk if needed.
-          # UA2F 是本固件默认的防检测引擎（跑在 NFQUEUE 上，开销小）。
-          if [ "$VARIANT" = "lite" ]; then
-            # 防检测中心默认引擎改成 UA2F
-          fi
+          # 固件自带 UA2F（跑在 NFQUEUE 上，开销小）；UA3F 已从固件移除，需要时再装离线包
           # 恢复可执行权限（二进制和脚本必须能执行）
           find openwrt/files -type d -exec chmod 0755 {} +
           find openwrt/files -type f -exec chmod 0644 {} +
