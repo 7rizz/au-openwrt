@@ -137,6 +137,11 @@ jobs:
         run: |
           mkdir -p openwrt/files
           cp -a device-files/. openwrt/files/
+          # UA2F 已弃用（它在 24.10 上跑不通：TPROXY 规则被内核拒绝），
+          # 镜像里不再带它，只保留 UA3F。
+          rm -f openwrt/files/usr/bin/ua2f \
+                openwrt/files/etc/init.d/ua2f \
+                openwrt/files/etc/config/ua2f
           # lite 版：小闪存机器装不下 17MB 的 UA3F，去掉它，只留 UA2F
           if [ "$VARIANT" = "lite" ]; then
             echo "==== lite 版：移除 UA3F，只保留 UA2F ===="
