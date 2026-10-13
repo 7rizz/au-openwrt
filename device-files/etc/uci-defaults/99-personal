@@ -139,4 +139,8 @@ uci commit network
 uci commit dhcp
 uci commit luci
 
+# UA2F 防引擎 + 出口 TTL 固定（开机自启）
+[ -x /etc/init.d/ua2f ] && /etc/init.d/ua2f enable
+[ -x /etc/init.d/ua2f-ttl ] && /etc/init.d/ua2f-ttl enable
+
 exit 0

@@ -5,9 +5,6 @@
 		"action": {
 			"type": "view",
 			"path": "ua2f"
-		},
-		"depends": {
-			"acl": [ "luci-app-ua2f" ]
 		}
 	}
 }
