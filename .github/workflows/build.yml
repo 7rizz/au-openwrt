@@ -24,7 +24,7 @@ on:
         required: false
         default: "xiaomi_redmi-router-ac2100"
       variant:
-        description: "full=完整版(含UA3F,需≥32MB闪存) / lite=精简版(只留UA2F,给16MB及以下老机器)"
+        description: "full=完整版(推荐) / lite=精简版(去掉大插件，给小闪存机器)"
         required: false
         default: "full"
       rootpw:
@@ -85,7 +85,7 @@ jobs:
           if ! grep -q "luci-app-argon-config" feeds.conf.default; then
             echo "src-git argon_config https://github.com/jerrykuku/luci-app-argon-config.git;master" >> feeds.conf.default
           fi
-          # 全能版才需要那个大插件源；校园网版只用官方源 + 已内置的 UA3F/UA2F，编译更稳
+          # 全能版才需要那个大插件源；校园网版只用官方源 + 固件里已内置的 UA2F，编译更稳
           if [ "$PROFILE" = "full" ]; then
             if ! grep -q "kenzok8/small-package" feeds.conf.default; then
               echo "src-git small https://github.com/kenzok8/small-package.git;main" >> feeds.conf.default
@@ -135,41 +135,16 @@ jobs:
           printf '%s' "$HASH" > openwrt/files/etc/rootpw.hash
           echo "已生成 root 密码哈希（密码本身不写进固件，只写哈希）"
 
-      - name: 7. 注入自定义文件（首次开机设置、无线、UA3F/UA2F、校园网登录）
+      - name: 7. 注入自定义文件（首次开机设置、无线、UA2F、校园网登录）
         env:
           VARIANT: ${{ github.event.inputs.variant || 'full' }}
         run: |
           mkdir -p openwrt/files
           cp -a device-files/. openwrt/files/
-          # UA3F already removed: it pushes all traffic into userspace and
           # slows this MT7621 down badly. Install its offline ipk if needed.
-          rm -f openwrt/files/usr/bin/ua3f \
-                openwrt/files/etc/init.d/ua3f \
-                openwrt/files/etc/config/ua3f \
-                openwrt/files/etc/uci-defaults/luci-ua3f \
-                openwrt/files/usr/lib/lua/luci/controller/ua3f.lua \
-                openwrt/files/usr/lib/lua/luci/model/cbi/ua3f.lua \
-                openwrt/files/usr/lib/lua/luci/i18n/ua3f.zh-cn.lmo
-          rm -rf openwrt/files/usr/lib/lua/luci/model/cbi/ua3f \
-                 openwrt/files/usr/lib/lua/luci/view/ua3f \
-                 openwrt/files/www/luci-static/resources/ua3f
           # UA2F 是本固件默认的防检测引擎（跑在 NFQUEUE 上，开销小）。
-          # UA3F 及其界面已移除，只保留 UA2F；需要 UA3F 时装离线 ipk。
-          # lite 版：小闪存机器装不下 17MB 的 UA3F，去掉它，只留 UA2F
           if [ "$VARIANT" = "lite" ]; then
-            echo "==== lite 版：移除 UA3F，只保留 UA2F ===="
-            rm -rf openwrt/files/usr/bin/ua3f \
-                   openwrt/files/etc/init.d/ua3f \
-                   openwrt/files/etc/config/ua3f \
-                   openwrt/files/etc/uci-defaults/luci-ua3f \
-                   openwrt/files/usr/lib/lua/luci/controller/ua3f.lua \
-                   openwrt/files/usr/lib/lua/luci/model/cbi/ua3f.lua \
-                   openwrt/files/usr/lib/lua/luci/model/cbi/ua3f \
-                   openwrt/files/usr/lib/lua/luci/view/ua3f \
-                   openwrt/files/usr/lib/lua/luci/i18n/ua3f.zh-cn.lmo \
-                   openwrt/files/www/luci-static/resources/ua3f
             # 防检测中心默认引擎改成 UA2F
-            sed -i "s/option engine 'ua3f'/option engine 'ua2f'/" openwrt/files/etc/config/uadetect
           fi
           # 恢复可执行权限（二进制和脚本必须能执行）
           find openwrt/files -type d -exec chmod 0755 {} +
@@ -258,7 +233,6 @@ jobs:
           [ -f "$ROOTDIR/usr/libexec/portal-probe" ] || echo "提示：镜像里没有 portal-probe（认证门户探测）"
           [ -f "$ROOTDIR/etc/uci-defaults/99-personal" ] || echo "提示：99-personal 没进镜像，自定义主机名/无线/后台地址会不生效"
           [ -f "$ROOTDIR/usr/bin/ua2f" ] || { echo "!! 镜像里没有 ua2f 二进制"; exit 1; }
-          [ ! -f "$ROOTDIR/usr/bin/ua3f" ] || echo "提示：镜像里还残留 ua3f 二进制（不该出现）"
           [ -f "$ROOTDIR/usr/lib/lua/luci/i18n/base.zh-cn.lmo" ] || { echo "!! 缺 base.zh-cn.lmo，中文界面会退回英文"; exit 1; }
           echo "镜像自检通过：Argon 主题 + 中文界面 + 认证门户探测都在镜像里。"
 
