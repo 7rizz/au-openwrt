@@ -131,6 +131,22 @@ jobs:
         run: |
           mkdir -p openwrt/files
           cp -a device-files/. openwrt/files/
+          # 兜底：仓库里可能还留着历史推送的 UA3F / UA 防检测中心 文件（上传只会覆盖、不会删旧文件）
+          rm -rf openwrt/files/usr/bin/ua3f openwrt/files/etc/init.d/ua3f openwrt/files/etc/config/ua3f \
+                 openwrt/files/etc/uci-defaults/luci-ua3f \
+                 openwrt/files/usr/lib/lua/luci/controller/ua3f.lua \
+                 openwrt/files/usr/lib/lua/luci/model/cbi/ua3f.lua \
+                 openwrt/files/usr/lib/lua/luci/model/cbi/ua3f \
+                 openwrt/files/usr/lib/lua/luci/view/ua3f \
+                 openwrt/files/usr/lib/lua/luci/i18n/ua3f.zh-cn.lmo \
+                 openwrt/files/www/luci-static/resources/ua3f \
+                 openwrt/files/usr/sbin/ua-detect-ctl openwrt/files/usr/libexec/uadetect-web \
+                 openwrt/files/etc/init.d/uadetect openwrt/files/etc/config/uadetect \
+                 openwrt/files/usr/lib/lua/luci/controller/uadetect.lua \
+                 openwrt/files/usr/lib/lua/luci/view/uadetect \
+                 openwrt/files/usr/share/luci/menu.d/luci-app-uadetect.json \
+                 openwrt/files/usr/share/rpcd/acl.d/luci-app-uadetect.json \
+                 openwrt/files/www/luci-static/resources/view/uadetect.js
           # 固件自带 UA2F（跑在 NFQUEUE 上，开销小）；UA3F 已从固件移除，需要时再装离线包
           # 恢复可执行权限（二进制和脚本必须能执行）
           find openwrt/files -type d -exec chmod 0755 {} +
