@@ -7,7 +7,7 @@
 /* ------------------------------------------------------------------
  * UA 防检测中心（JS 版，排版和「顺枫公寓自动登录」保持一致）
  *
- *   - UA3F / UA2F 两个引擎，二选一，开启一个会自动停掉另一个
+ *   - 引擎：UA3F（UA2F 已弃用并从固件里移除）
  *   - 伪装人格（统一 UA + TTL）、检测对策、进阶开关
  *   - UA 自检入口
  *
@@ -123,7 +123,8 @@ return view.extend({
 		}
 
 		/* ------------------------------------------------ 引擎状态 */
-		var ENG = [ 'ua3f', 'ua2f' ];
+		/* UA2F 已弃用（24.10 上跑不通），面板只保留 UA3F */
+		var ENG = [ 'ua3f' ];
 		var engState = {}, engBtn = {};
 
 		ENG.forEach(function(k) {
@@ -162,10 +163,7 @@ return view.extend({
 
 		/* 开关类 */
 		var SWITCHES = [
-			{ 'k': 'handle_lan',      'title': _('处理内网流量'),       'descr': _('防止访问内网时被检测，建议开启') },
 			{ 'k': 'handle_firewall', 'title': _('自动配置防火墙'),     'descr': _('固定 TTL + 劫持 NTP 统一时钟，建议开启') },
-			{ 'k': 'handle_443',      'title': _('处理 443 端口流量'),  'descr': _('443 是加密流量、改不了，建议关闭') },
-			{ 'k': 'handle_mmtls',    'title': _('处理 mmtls 流量'),    'descr': _('微信不能正常使用时再关闭') },
 			{ 'k': 'l3_tcpts',        'title': _('清除 TCP 时间戳'),    'descr': _('防时钟偏移检测（仅 UA3F 生效）') },
 			{ 'k': 'l3_ipid',         'title': _('IPID 归零'),          'descr': _('（仅 UA3F 生效）') },
 			{ 'k': 'block_quic',      'title': _('阻断 QUIC'),          'descr': _('重武器，可能拖慢网络，默认关闭（仅 UA3F 生效）') }
@@ -305,14 +303,11 @@ return view.extend({
 		var engineSection = section(_('引擎开关'), [
 			row('UA3F',
 				[ engBtn.ua3f, engState.ua3f ],
-				_('功能全：改 UA + 固定 TTL + 清 TCP 时间戳 + IPID 归零（推荐）')),
-			row('UA2F',
-				[ engBtn.ua2f, engState.ua2f ],
-				_('轻量：只改 UA，TTL 由下面「自动配置防火墙」补上')),
+				_('改 UA + 固定 TTL + 清 TCP 时间戳 + IPID 归零')),
 			row(_('整套防护'),
 				[ allBtn, allState ],
-				_('两个引擎互斥，启用其中一个会自动停掉另一个。注意：上面的「正在使用 / 未运行」' +
-				  '是进程状态，下面各开关显示的是配置值——配置只有在防护启用、引擎真正跑起来之后才生效。')),
+				_('注意：上面的「正在使用 / 未运行」是进程状态，下面各开关显示的是配置值——' +
+				  '配置只有在防护启用、引擎真正跑起来之后才生效。')),
 			row(' ',
 				[ button(_('UA3F 高级设置（规则 / 日志 / 统计）›'), 'cbi-button-action', function() {
 					window.location.href = L.url('admin', 'services', 'ua3f');
@@ -378,7 +373,7 @@ return view.extend({
 			E('div', { 'style': 'font-weight:bold; color:#c0392b; margin:2px 0 8px' },
 				'作者：au学长　V：aauuo0'),
 			E('div', { 'class': 'cbi-map-descr' },
-				_('一个面板管两个引擎：UA3F 与 UA2F 二选一，开启一个会自动停掉另一个。')),
+				_('防检测引擎：UA3F —— 统一 UA + 固定 TTL + 清除 TCP 时间戳 + IPID 归零。')),
 			engineSection,
 			checkSection,
 			personaSection,
