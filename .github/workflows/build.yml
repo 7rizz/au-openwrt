@@ -98,6 +98,10 @@ jobs:
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          # Argon 主题 / 设置页必须在 feeds 里（拉不下来就直接报错，别等刷完机才发现）
+          ls -d package/feeds/*/luci-theme-argon package/feeds/*/luci-app-argon-config >/dev/null 2>&1 || {
+            echo "!! feeds 里没有 luci-theme-argon / luci-app-argon-config，第三方源没拉全"; exit 1; }
+          echo "Argon 主题源 OK"
 
       - name: 7a. 生成 root 密码哈希（编译时算好，首次开机写进系统）
         env:
@@ -137,11 +141,20 @@ jobs:
         run: |
           mkdir -p openwrt/files
           cp -a device-files/. openwrt/files/
-          # UA2F 已弃用（它在 24.10 上跑不通：TPROXY 规则被内核拒绝），
-          # 镜像里不再带它，只保留 UA3F。
-          rm -f openwrt/files/usr/bin/ua2f \
-                openwrt/files/etc/init.d/ua2f \
-                openwrt/files/etc/config/ua2f
+          # UA3F already removed: it pushes all traffic into userspace and
+          # slows this MT7621 down badly. Install its offline ipk if needed.
+          rm -f openwrt/files/usr/bin/ua3f \
+                openwrt/files/etc/init.d/ua3f \
+                openwrt/files/etc/config/ua3f \
+                openwrt/files/etc/uci-defaults/luci-ua3f \
+                openwrt/files/usr/lib/lua/luci/controller/ua3f.lua \
+                openwrt/files/usr/lib/lua/luci/model/cbi/ua3f.lua \
+                openwrt/files/usr/lib/lua/luci/i18n/ua3f.zh-cn.lmo
+          rm -rf openwrt/files/usr/lib/lua/luci/model/cbi/ua3f \
+                 openwrt/files/usr/lib/lua/luci/view/ua3f \
+                 openwrt/files/www/luci-static/resources/ua3f
+          # UA2F 是本固件默认的防检测引擎（跑在 NFQUEUE 上，开销小）。
+          # UA3F 及其界面已移除，只保留 UA2F；需要 UA3F 时装离线 ipk。
           # lite 版：小闪存机器装不下 17MB 的 UA3F，去掉它，只留 UA2F
           if [ "$VARIANT" = "lite" ]; then
             echo "==== lite 版：移除 UA3F，只保留 UA2F ===="
@@ -166,6 +179,8 @@ jobs:
           chmod 0755 openwrt/files/usr/bin/*      2>/dev/null || true
           chmod 0755 openwrt/files/usr/sbin/*     2>/dev/null || true
           chmod 0755 openwrt/files/usr/libexec/*  2>/dev/null || true
+          # rpcd 插件在子目录里，必须单独给执行位，否则 Argon 设置页挂在 /usr/libexec/rpcd/ 的脚本跑不起来
+          chmod 0755 openwrt/files/usr/libexec/rpcd/* 2>/dev/null || true
           chmod 0755 openwrt/files/root/*.sh      2>/dev/null || true
           find openwrt/files -type f
 
@@ -189,6 +204,7 @@ jobs:
           fi
           echo "机型：$MODEL ($DEVICE)   平台：$TARGET/$SUBTARGET   版本：$PROFILE"
           cp "$SEED" .config
+          echo "本次用的 seed：$SEED   md5=$(md5sum "$SEED" | cut -d' ' -f1)"
           # 用选中的机型替换掉配置文件里的目标设备三行
           grep -v '^CONFIG_TARGET_' .config > .config.new && mv .config.new .config
           {
@@ -197,6 +213,27 @@ jobs:
             echo "CONFIG_TARGET_${TARGET}_${SUBTARGET}_DEVICE_${DEVICE}=y"
           } >> .config
           make defconfig
+          # ---- 关键包自检：缺一个就中止，避免刷完才发现是英文界面、没主题 ----
+          #
+          # 硬性要求（缺了就没法用）：luci / luci-compat / curl
+          # 只提醒不中止（缺了也有兜底）：argon 主题、中文语言包、tcpdump
+          #   —— 因为主题和中文词条现在是直接放在 device-files/ 里进镜像的，
+          #      就算这几个包没被 kconfig 选中，镜像里照样有。
+          MISSING=0
+          for sym in CONFIG_PACKAGE_luci=y CONFIG_PACKAGE_luci-compat=y CONFIG_PACKAGE_curl=y ; do
+            grep -qx "$sym" .config || { echo "!! 没编进去（会导致固件不可用）: $sym"; MISSING=1; }
+          done
+          if [ "$MISSING" != 0 ]; then
+            echo "===== 核心包缺失，本次编译在这里中止 ====="
+            exit 1
+          fi
+          echo "----- 只提醒不中止的包 -----"
+          for sym in CONFIG_PACKAGE_luci-theme-argon=y CONFIG_PACKAGE_luci-app-argon-config=y \
+                     CONFIG_PACKAGE_luci-i18n-base-zh-cn=y CONFIG_PACKAGE_luci-i18n-dashboard-zh-cn=y \
+                     CONFIG_PACKAGE_tcpdump=y ; do
+            grep -qx "$sym" .config && echo "    选中 $sym" || echo "    没选中 $sym（由 device-files 兜底）"
+          done
+          echo "核心包自检通过。"
           echo "=========== 目标设备 ==========="
           grep -E "^CONFIG_TARGET_[a-z0-9_]+=" .config || true
           echo "=========== 关键插件是否选中 ==========="
@@ -211,12 +248,27 @@ jobs:
         run: |
           cd openwrt
           make -j"$(nproc)" || make -j1 V=s
+          # ---- 镜像自检：主题和中文是不是真的进了要打包的 rootfs ----
+          ROOTDIR="$(ls -d build_dir/target-*/root-* 2>/dev/null | head -n1)"
+          echo "staging 根目录：$ROOTDIR"
+          [ -d "$ROOTDIR/www/luci-static/argon" ] || { echo "!! 镜像里没有 argon 主题目录"; exit 1; }
+          ls "$ROOTDIR"/usr/lib/lua/luci/i18n/*.zh-cn.lmo >/dev/null 2>&1 || {
+            echo "!! 镜像里没有中文语言包(*.zh-cn.lmo)"; exit 1; }
+          [ -f "$ROOTDIR/etc/uci-defaults/99-argon-lang" ] || { echo "!! 镜像里没有 99-argon-lang（主题和语言不会被设置）"; exit 1; }
+          [ -f "$ROOTDIR/usr/libexec/portal-probe" ] || echo "提示：镜像里没有 portal-probe（认证门户探测）"
+          [ -f "$ROOTDIR/etc/uci-defaults/99-personal" ] || echo "提示：99-personal 没进镜像，自定义主机名/无线/后台地址会不生效"
+          [ -f "$ROOTDIR/usr/bin/ua2f" ] || { echo "!! 镜像里没有 ua2f 二进制"; exit 1; }
+          [ ! -f "$ROOTDIR/usr/bin/ua3f" ] || echo "提示：镜像里还残留 ua3f 二进制（不该出现）"
+          [ -f "$ROOTDIR/usr/lib/lua/luci/i18n/base.zh-cn.lmo" ] || { echo "!! 缺 base.zh-cn.lmo，中文界面会退回英文"; exit 1; }
+          echo "镜像自检通过：Argon 主题 + 中文界面 + 认证门户探测都在镜像里。"
 
       - name: 11. 整理产物
         run: |
           mkdir -p out
           find openwrt/bin/targets -name '*.bin' -exec cp -v {} out/ \;
           find openwrt/bin/targets -name 'sha256sums' -exec cp -v {} out/ \;
+          find openwrt/bin/targets -name '*.manifest' -exec cp -v {} out/ \;
+          find openwrt/bin/targets \( -name 'config.buildinfo' -o -name 'feeds.buildinfo' -o -name 'version.buildinfo' -o -name 'profiles.json' \) -exec cp -v {} out/ \;
           ls -lh out
 
       - name: 12. 上传固件
