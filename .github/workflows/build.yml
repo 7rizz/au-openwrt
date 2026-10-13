@@ -79,12 +79,6 @@ jobs:
           # Argon 主题（支持 24.10，带暗色 + 自己的设置页）：两个版本都带上
           # 注意：不要用 Design 主题（luci-theme-design），那是 LEDE 时代的老式 Lua 主题，
           # 在 24.10 上会导致后台报错（header.htm 里 __entries 为 nil）。
-          if ! grep -q "luci-theme-argon" feeds.conf.default; then
-            echo "src-git argon_theme https://github.com/jerrykuku/luci-theme-argon.git;master" >> feeds.conf.default
-          fi
-          if ! grep -q "luci-app-argon-config" feeds.conf.default; then
-            echo "src-git argon_config https://github.com/jerrykuku/luci-app-argon-config.git;master" >> feeds.conf.default
-          fi
           # 全能版才需要那个大插件源；校园网版只用官方源 + 固件里已内置的 UA2F，编译更稳
           if [ "$PROFILE" = "full" ]; then
             if ! grep -q "kenzok8/small-package" feeds.conf.default; then
@@ -98,10 +92,6 @@ jobs:
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          # Argon 主题 / 设置页必须在 feeds 里（拉不下来就直接报错，别等刷完机才发现）
-          ls -d package/feeds/*/luci-theme-argon package/feeds/*/luci-app-argon-config >/dev/null 2>&1 || {
-            echo "!! feeds 里没有 luci-theme-argon / luci-app-argon-config，第三方源没拉全"; exit 1; }
-          echo "Argon 主题源 OK"
 
       - name: 7a. 生成 root 密码哈希（编译时算好，首次开机写进系统）
         env:
