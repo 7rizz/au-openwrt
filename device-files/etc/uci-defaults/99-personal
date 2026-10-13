@@ -124,6 +124,9 @@ fi
 #    LuCI「服务 → UA 防检测中心」里随时改。
 # ---------------------------------------------------------------
 [ -x /etc/init.d/uadetect ] && /etc/init.d/uadetect enable
+# UA2F 防检测引擎 + 出站 TTL 固定（开机自启）
+[ -x /etc/init.d/ua2f ] && /etc/init.d/ua2f enable
+[ -x /etc/init.d/ua2f-ttl ] && /etc/init.d/ua2f-ttl enable
 if [ -x /etc/init.d/netcheck ] && grep -q '^USERNAME=.' /etc/auth.conf 2>/dev/null; then
 	/etc/init.d/netcheck enable
 fi

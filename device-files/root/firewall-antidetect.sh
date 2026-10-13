@@ -2,15 +2,15 @@
 # ============================================================================
 # 校园网防检测 · 防火墙规则脚本
 #
-# 作用：处理 UA3F / UA2F 之外、需要网络层完成的几件事
+# 作用：处理 UA2F / UA2F 之外、需要网络层完成的几件事
 #   - 固定出站 TTL（最关键的补充项）
 #   - 把外网 NTP(123) 劫持到本路由器，统一时钟
 #   - 可选：把 DNS(53) 劫持到本路由器
 #
 # 什么时候需要它：
 #   - 用 UA2F（UA2F 只改 UA，不碰 TTL）→ 基本必跑
-#   - 用 UA3F 但想额外统一 NTP / DNS
-#   - 用 UA3F 的 TPROXY/REDIRECT 且已在面板勾了固定 TTL → 不必跑 TTL 部分
+#   - 用 UA2F 但想额外统一 NTP / DNS
+#   - 用 UA2F 的 TPROXY/REDIRECT 且已在面板勾了固定 TTL → 不必跑 TTL 部分
 #
 # 用法：
 #   sh firewall-antidetect.sh install [TTL]   # 默认 TTL=64
@@ -27,10 +27,10 @@ TTL="${2:-64}"
 GATEWAY="$(uci -q get network.lan.ipaddr 2>/dev/null || true)"
 [ -z "$GATEWAY" ] && GATEWAY="192.168.1.1"
 
-TABLE_TTL="ua3f_ttl"
-TABLE_NAT="ua3f_nat"
-CH_TTL="UA3F_TTL"
-CH_NTP="UA3F_NTP"
+TABLE_TTL="ua2f_ttl"
+TABLE_NAT="ua2f_nat"
+CH_TTL="UA2F_TTL"
+CH_NTP="UA2F_NTP"
 
 have_nft() { command -v nft >/dev/null 2>&1; }
 have_ipt() { command -v iptables >/dev/null 2>&1; }

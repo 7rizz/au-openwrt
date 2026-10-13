@@ -12,7 +12,11 @@ config ua2f 'main'
 	option listen_port '10010'
 	option nfqueue_workers '1'
 	option proxy_workers '0'
-	option custom_ua ''
+	# 默认伪装人格：Windows（要改就改 custom_ua，或在「服务 -> UA2F 防检测」里点人格按钮）
+	option persona 'windows'
+	option custom_ua 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+	# 开机自动固定 TTL=64（由 /etc/init.d/ua2f-ttl 执行）
+	option fix_ttl '1'
 	option disable_connmark '0'
 	option max_http_sessions '0'
 	option session_ttl '300'

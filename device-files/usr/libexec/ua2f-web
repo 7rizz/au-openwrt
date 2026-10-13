@@ -1,0 +1,93 @@
+#!/bin/sh
+PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+export PATH
+case "$1" in
+	ua_windows) echo 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' ;;
+	ua_iphone)  echo 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' ;;
+	ua_android) echo 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36' ;;
+	ua_mac)     echo 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15' ;;
+	ttl_on)
+		nft list table ip ua2f_ttl >/dev/null 2>&1 || nft add table ip ua2f_ttl
+		nft list chain ip ua2f_ttl postrouting >/dev/null 2>&1 || \
+			nft 'add chain ip ua2f_ttl postrouting { type filter hook postrouting priority mangle; }' 2>/dev/null
+		nft flush chain ip ua2f_ttl postrouting 2>/dev/null
+		nft add rule ip ua2f_ttl postrouting ip ttl set 64 2>/dev/null
+		uci -q set ua2f.main.fix_ttl='1'; uci -q commit ua2f
+		nft list chain ip ua2f_ttl postrouting 2>/dev/null | grep -q 'ttl set' && echo "TTL 已固定为 64" || echo "TTL 规则下发失败"
+		;;
+	ttl_off)
+		nft delete table ip ua2f_ttl 2>/dev/null
+		uci -q set ua2f.main.fix_ttl='0'; uci -q commit ua2f
+		echo "TTL 固定已关闭"
+		;;
+	status)
+		pgrep -f '/usr/bin/ua2f' >/dev/null 2>&1 && echo "running=1" || echo "running=0"
+		printf 'pid=%s\n' "$(pgrep -f '/usr/bin/ua2f' 2>/dev/null | head -n1)"
+		/etc/init.d/ua2f enabled >/dev/null 2>&1 && echo "enabled=1" || echo "enabled=0"
+		printf 'mode=%s\n'   "$(uci -q get ua2f.main.mode)"
+		printf 'port=%s\n'   "$(uci -q get ua2f.main.listen_port)"
+		printf 'ua=%s\n'     "$(uci -q get ua2f.main.custom_ua)"
+		nft list table inet ua2f >/dev/null 2>&1 && echo "rules=1" || echo "rules=0"
+		;;
+	persona)
+		case "$2" in
+			windows|iphone|android|mac) ;;
+			*) echo "ERROR: 人格只能是 windows/iphone/android/mac" >&2; exit 1 ;;
+		esac
+		v="$("$0" "ua_$2")"
+		uci -q set ua2f.main.custom_ua="$v"
+		uci -q set ua2f.main.persona="$2"
+		uci -q commit ua2f
+		/etc/init.d/ua2f restart >/dev/null 2>&1
+		echo "人格 -> $2"
+		;;
+	start)
+		/etc/init.d/ua2f enable >/dev/null 2>&1
+		/etc/init.d/ua2f start
+		# 记住上次的 TTL 设置，重启后自动补回规则
+		[ "$(uci -q get ua2f.main.fix_ttl)" = "1" ] && "$0" ttl_on >/dev/null
+		;;
+	stop)    /etc/init.d/ua2f stop ;;
+	restart) /etc/init.d/ua2f restart ;;
+	disable) /etc/init.d/ua2f stop; /etc/init.d/ua2f disable ;;
+	log)     logread | grep -i ua2f | tail -n 40 ;;
+	get)
+		printf 'custom_ua=%s\n' "$(uci -q get ua2f.main.custom_ua)"
+		printf 'mode=%s\n'      "$(uci -q get ua2f.main.mode)"
+		printf 'workers=%s\n'   "$(uci -q get ua2f.main.nfqueue_workers)"
+		printf 'handle_fw=%s\n' "$(uci -q get ua2f.firewall.handle_fw)"
+		printf 'handle_tls=%s\n' "$(uci -q get ua2f.firewall.handle_tls)"
+		printf 'intranet=%s\n'  "$(uci -q get ua2f.firewall.handle_intranet)"
+		;;
+	set)
+		# set <key> <value>  只允许白名单键，杜绝命令注入
+		case "$2" in
+			custom_ua|mode|nfqueue_workers|handle_fw|handle_tls|handle_intranet) ;;
+			*) echo "ERROR: 不允许的键 $2" >&2; exit 1 ;;
+		esac
+		[ -n "$3" ] || { echo "ERROR: 缺值" >&2; exit 1; }
+		case "$2" in
+			custom_ua) v="$(printf '%s' "$3" | tr -cd 'A-Za-z0-9 ._/();:-,')"; uci -q set ua2f.main.custom_ua="$v" ;;
+			mode)      uci -q set ua2f.main.mode="$3" ;;
+			handle_fw) uci -q set ua2f.firewall.handle_fw="$3" ;;
+			handle_tls)uci -q set ua2f.firewall.handle_tls="$3" ;;
+			intranet)  uci -q set ua2f.firewall.handle_intranet="$3" ;;
+			*)         uci -q set ua2f.main."$2"="$3" ;;
+		esac
+		uci -q commit ua2f
+		/etc/init.d/ua2f restart >/dev/null 2>&1
+		;;
+	check)
+		echo "== UA2F 自检 =="
+		pgrep -f '/usr/bin/ua2f' >/dev/null 2>&1 && echo "进程: 在跑" || echo "进程: 没跑"
+		nft list table inet ua2f >/dev/null 2>&1 && echo "内核规则: 已下发" || echo "内核规则: 没有"
+		for l in libnetfilter_queue.so.1 libnetfilter_conntrack.so.3 libmnl.so.0 libnfnetlink.so.0; do
+			[ -e /usr/lib/$l ] && echo "库 $l: 有" || echo "库 $l: 缺（这个缺了才会起不来）"
+		done
+		# libatomic 只在部分代码路径用到，装不装都不影响 UA2F 运行
+		[ -e /usr/lib/libatomic.so.1 ] && echo "库 libatomic.so.1: 有" || echo "库 libatomic.so.1: 没有（不影响，进程在跑就没问题）"
+		echo "本机 IPv4 地址："
+		ip -4 addr show up 2>/dev/null | sed -n 's/^ *inet \([0-9.]*\)\/.*/  \1/p'
+		;;
+	*) echo "用法: ua2f-web status|start|stop|restart|disable|log|get|set <k> <v>|check" >&2; exit 1 ;;
+esac

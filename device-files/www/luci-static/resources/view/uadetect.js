@@ -7,7 +7,7 @@
 /* ------------------------------------------------------------------
  * UA 防检测中心（JS 版，排版和「顺枫公寓自动登录」保持一致）
  *
- *   - 引擎：UA3F（UA2F 已弃用并从固件里移除）
+ *   - 引擎：UA2F（UA2F 已弃用并从固件里移除）
  *   - 伪装人格（统一 UA + TTL）、检测对策、进阶开关
  *   - UA 自检入口
  *
@@ -123,8 +123,8 @@ return view.extend({
 		}
 
 		/* ------------------------------------------------ 引擎状态 */
-		/* UA2F 已弃用（24.10 上跑不通），面板只保留 UA3F */
-		var ENG = [ 'ua3f' ];
+		/* UA2F 已弃用（24.10 上跑不通），面板只保留 UA2F */
+		var ENG = [ 'ua2f' ];
 		var engState = {}, engBtn = {};
 
 		ENG.forEach(function(k) {
@@ -164,9 +164,9 @@ return view.extend({
 		/* 开关类 */
 		var SWITCHES = [
 			{ 'k': 'handle_firewall', 'title': _('自动配置防火墙'),     'descr': _('固定 TTL + 劫持 NTP 统一时钟，建议开启') },
-			{ 'k': 'l3_tcpts',        'title': _('清除 TCP 时间戳'),    'descr': _('防时钟偏移检测（仅 UA3F 生效）') },
-			{ 'k': 'l3_ipid',         'title': _('IPID 归零'),          'descr': _('（仅 UA3F 生效）') },
-			{ 'k': 'block_quic',      'title': _('阻断 QUIC'),          'descr': _('重武器，可能拖慢网络，默认关闭（仅 UA3F 生效）') }
+			{ 'k': 'l3_tcpts',        'title': _('清除 TCP 时间戳'),    'descr': _('防时钟偏移检测（仅 UA2F 生效）') },
+			{ 'k': 'l3_ipid',         'title': _('IPID 归零'),          'descr': _('（仅 UA2F 生效）') },
+			{ 'k': 'block_quic',      'title': _('阻断 QUIC'),          'descr': _('重武器，可能拖慢网络，默认关闭（仅 UA2F 生效）') }
 		];
 
 		var swBtn = {}, swState = {};
@@ -201,9 +201,9 @@ return view.extend({
 
 		function paint() {
 			var protectorOn = (st.enabled === '1');
-			var act         = protectorOn ? (st.engine || 'ua3f') : '';
+			var act         = protectorOn ? (st.engine || 'ua2f') : '';
 			var engineLive  = protectorOn && (st[act + '_running'] === '1');
-			var advLive     = engineLive && (act === 'ua3f');
+			var advLive     = engineLive && (act === 'ua2f');
 
 			ENG.forEach(function(k) {
 				var name  = k.toUpperCase();
@@ -251,7 +251,7 @@ return view.extend({
 			if (protectorOn) {
 				allState.textContent = engineLive
 					? _('已启用，当前引擎：%s').format(act.toUpperCase())
-					: _('已启用，但引擎没跑起来（去「UA3F 高级设置」看日志）');
+					: _('已启用，但引擎没跑起来（去「UA2F 高级设置」看日志）');
 				allState.style.color = engineLive ? '#3c9' : '#c93';
 				allBtn.textContent = _('全部停用');
 				allBtn.className = 'cbi-button cbi-button-reset';
@@ -268,7 +268,7 @@ return view.extend({
 				allBtn.onclick = function() {
 					/* 注意：不能调 apply —— 配置里 enabled=0 时 apply 只会"按配置保持关闭"，
 					   等于什么都不做。要启用就得切到配置里的那个引擎。 */
-					return run([ 'use_' + (st.engine || 'ua3f') ], _('启用防护'),
+					return run([ 'use_' + (st.engine || 'ua2f') ], _('启用防护'),
 						function() { return st.enabled === '1'; });
 				};
 			}
@@ -301,17 +301,15 @@ return view.extend({
 
 		/* ------------------------------------------------ 组装页面 */
 		var engineSection = section(_('引擎开关'), [
-			row('UA3F',
-				[ engBtn.ua3f, engState.ua3f ],
+			row('UA2F',
+				[ engBtn.ua2f, engState.ua2f ],
 				_('改 UA + 固定 TTL + 清 TCP 时间戳 + IPID 归零')),
 			row(_('整套防护'),
 				[ allBtn, allState ],
 				_('注意：上面的「正在使用 / 未运行」是进程状态，下面各开关显示的是配置值——' +
 				  '配置只有在防护启用、引擎真正跑起来之后才生效。')),
 			row(' ',
-				[ button(_('UA3F 高级设置（规则 / 日志 / 统计）›'), 'cbi-button-action', function() {
-					window.location.href = L.url('admin', 'services', 'ua3f');
-				}) ])
+				[ span(_('规则 / 日志 / 统计页面已移除')) ])
 		]);
 
 		var checkSection = section(_('检测 UA 是否生效'), [
@@ -337,7 +335,7 @@ return view.extend({
 			return row(s.title, [ swBtn[s.k], swState[s.k] ], s.descr);
 		}));
 
-		var advSection = section(_('进阶（仅 UA3F 引擎生效）'), SWITCHES.slice(4).map(function(s) {
+		var advSection = section(_('进阶（当前引擎不支持这几项）'), [].map(function(s) {
 			return row(s.title, [ swBtn[s.k], swState[s.k] ], s.descr);
 		}));
 
@@ -362,7 +360,7 @@ return view.extend({
 		paint();
 
 		poll.add(function() {
-			if (!document.body.contains(engState.ua3f))
+			if (!document.body.contains(engState.ua2f))
 				return Promise.resolve();
 
 			return refresh();
@@ -373,7 +371,7 @@ return view.extend({
 			E('div', { 'style': 'font-weight:bold; color:#c0392b; margin:2px 0 8px' },
 				'作者：au学长　V：aauuo0'),
 			E('div', { 'class': 'cbi-map-descr' },
-				_('防检测引擎：UA3F —— 统一 UA + 固定 TTL + 清除 TCP 时间戳 + IPID 归零。')),
+				_('防检测引擎：UA2F —— 统一 UA + 固定 TTL + 清除 TCP 时间戳 + IPID 归零。')),
 			engineSection,
 			checkSection,
 			personaSection,
