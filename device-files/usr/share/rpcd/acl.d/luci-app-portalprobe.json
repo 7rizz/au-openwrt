@@ -1,0 +1,11 @@
+{
+	"luci-app-portalprobe": {
+		"description": "Grant access to the campus portal probe helper",
+		"read": {
+			"file": {
+				"/usr/libexec/portal-probe": [ "exec" ],
+				"/tmp/portal-probe-report.txt": [ "read" ]
+			}
+		}
+	}
+}
