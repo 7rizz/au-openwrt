@@ -1,0 +1,10 @@
+{
+	"admin/services/devices": {
+		"title": "连接设备",
+		"order": 57,
+		"action": {
+			"type": "view",
+			"path": "devices"
+		}
+	}
+}

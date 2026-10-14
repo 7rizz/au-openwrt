@@ -1,193 +1,114 @@
 #!/bin/sh
-# ================================================================
-#  portal-probe —— 校园网「认证门户探测 + 抓包分析」工具
-#
-#  用途：换个学校 / 换个楼栋，认证方式变了 —— 跑一遍，
-#        把生成的报告发出来，就能据此写/改自动登录脚本。
-#
-#  用法（在路由器上执行）：
-#    portal-probe probe           探测认证门户（最重要，先跑这个）
-#    portal-probe capture [秒]    再抓一段包，分析认证请求（默认 30 秒）
-#    portal-probe show            显示上次报告
-#    portal-probe clear           清空报告
-#    portal-probe probe-bg        后台跑探测（网页调用用）
-#    portal-probe capture-bg [秒] 后台抓包（网页调用用）
-#    portal-probe status          是否正在跑（running=1/0）
-#
-#  报告里不会出现你的密码（抓到的密码会自动打码）。
-# ================================================================
-PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH
-export PATH
-
-REPORT=/tmp/portal-probe-report.txt
-PCAP=/tmp/portal-probe.pcap
-RUNNING=/tmp/portal-probe-running
+# =====================================================================
+#  万能校园网认证门户探测 v2      by au学长 V：aauuo0
+#  覆盖：深澜 srun / Dr.COM eportal / 锐捷 Ruijie / H3C / 城市热点 / 华为 / 未知通用
+#  用法： portal-probe probe      探测并生成报告 + 登录命令模板
+#         portal-probe show       看上次报告    portal-probe clear  清空
+#         portal-probe login-help 只看登录模板
+#  报告固定写 /tmp/portal-probe-report.txt（不含密码）
+# =====================================================================
+R=/tmp/portal-probe-report.txt
+RUN=/tmp/portal-probe-running
 UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
-PROBES='http://connect.rom.miui.com/generate_204 http://www.baidu.com/ http://1.1.1.1/'
-MARKS='webauth.do wlanacip wlanuserip wlanacname eportal srun drcom portal'
-FINGS='srun 深澜 drcom Dr.COM 城市热点 锐捷 ruijie Ruijie h3c H3C 华为 huawei 赛尔 samsung zte 中兴'
-
-out() { printf '%s\n' "$*" >>"$REPORT"; }
-mask() { sed -e 's/\(passwd\|password\|pwd\|pass\)=[^&"'"'"' ]*/\1=***已打码***/g' \
-             -e 's/\(PASSWD\|PASSWORD\|PWD\|PASS\)=[^&"'"'"' ]*/\1=***已打码***/g'; }
-urlparam() {
-	printf '%s' "$2" | awk -v want="$1" '
-		{ n = split($0, a, "[?&]")
-		  for (i = 1; i <= n; i++)
-			if (index(a[i], want "=") == 1) { print substr(a[i], length(want) + 2); exit } }'
-}
-wan_if() { ip route show default 2>/dev/null | awk '/^default/{print $5; exit}'; }
+PROBES='http://connect.rom.miui.com/generate_204 http://www.baidu.com/ http://1.1.1.1/ http://detectportal.firefox.com/success.txt'
+out() { printf '%s\n' "$*" >>"$R"; }
+wan() { ip route show default 2>/dev/null | awk '/^default/{print $5;exit}'; }
+# 只做常见的百分号还原，够看参数了（不做完整 URL 解码，避免 busybox 缺 strtonum）
+dec() { printf '%s' "$1" | sed -e 's/%20/ /g;s/%3A/:/g;s/%2F/\\/g;s/%3D/=/g;s/%26/\&/g'; }
+param() { printf '%s' "$2" | tr '?&' '\n\n' | sed -n "s/^$1=//p" | head -n1; }
 
 probe() {
-	: >"$REPORT"
-	out "==================== 认证门户探测报告 ===================="
-	out "时间   : $(date '+%Y-%m-%d %H:%M:%S')"
-	. /etc/openwrt_release 2>/dev/null
-	out "固件   : ${DISTRIB_DESCRIPTION:-未知}"
-	out "型号   : $(cat /tmp/sysinfo/model 2>/dev/null)"
-	out "主机名 : $(uci -q get system.@system[0].hostname 2>/dev/null)"
+	: >"$R"
+	out "========== 校园网认证门户探测报告 v2 =========="
+	out "时间 : $(date '+%Y-%m-%d %H:%M:%S')"
+	. /etc/openwrt_release 2>/dev/null; out "固件 : ${DISTRIB_DESCRIPTION:-未知}"
+	IF="$(wan)"; out "WAN  : ${IF:-未检出}"
+	[ -n "$IF" ] && out "WANIP: $(ip -4 addr show "$IF" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -n1)"
+	out "WANMAC: $([ -n "$IF" ] && ip link show "$IF" 2>/dev/null | awk '/link\/ether/{print $2;exit}')"
 
-	IF="$(wan_if)"
-	out "WAN接口: ${IF:-未检测到}"
-	if [ -n "$IF" ]; then
-		out "WAN_IP : $(ip -4 addr show "$IF" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -n1)"
-		out "WAN_MAC: $(ip link show "$IF" 2>/dev/null | awk '/link\/ether/{print $2; exit}')"
-	fi
+	out ""; out "---- 0) 联网状态 ----"
+	c="$(curl -s -o /dev/null -m 6 -A "$UA" -w '%{http_code}' http://connect.rom.miui.com/generate_204 2>/dev/null)"
+	[ "$c" = "204" ] && out "  204 已能上网（没被门户拦）" || out "  HTTP ${c:-超时} → 被拦或没网"
 
-	out ""
-	out "-- 0) 当前联网状态 --"
-	code="$(curl -s -o /dev/null -m 6 -A "$UA" -w '%{http_code}' http://connect.rom.miui.com/generate_204 2>/dev/null)"
-	if [ "$code" = "204" ]; then
-		out "  204 → 已经能上网（没被门户拦）"
-	else
-		out "  HTTP ${code:-超时} → 被门户拦着 / 或根本没网"
-	fi
-
-	out ""
-	out "-- 1) 探测重定向（找门户地址）--"
+	out ""; out "---- 1) 触发重定向，找门户 ----"
 	PORTAL=""
 	for u in $PROBES; do
 		r="$(curl -s -o /dev/null -m 8 -A "$UA" -w '%{http_code}|%{redirect_url}' "$u" 2>/dev/null)"
-		c="${r%%|*}"; l="${r#*|}"
-		out "  $u"
-		out "      HTTP ${c:-?}    跳转 → ${l:-（无）}"
-		if [ -n "$l" ]; then
-			for m in $MARKS; do
-				case "$l" in *"$m"*) PORTAL="$l" ;; esac
-			done
-		fi
-		[ -n "$PORTAL" ] && break
+		out "  $u → HTTP ${r%%|*}  跳转 ${r#*|}"
+		l="${r#*|}"
+		case "$l" in *webauth*|*eportal*|*srun*|*drcom*|*portal*|*wlanuserip*|*ac_id*|*redirect*) PORTAL="$l"; break ;; esac
 	done
-
 	if [ -z "$PORTAL" ]; then
-		out "  （跳转里没有门户特征，再从页面正文里找）"
+		out "  跳转里没线索，改从页面正文里找"
 		for u in $PROBES; do
 			b="$(curl -s -m 8 -A "$UA" "$u" 2>/dev/null)"
-			l="$(printf '%s' "$b" | grep -Eo 'https?://[^ "<>]+' | grep -i 'webauth\.do' | head -n1)"
-			[ -z "$l" ] && l="$(printf '%s' "$b" | grep -Eo 'https?://[^ "<>]+' | grep -iE 'eportal|srun|drcom|portal' | head -n1)"
-			if [ -n "$l" ]; then PORTAL="$l"; out "  从页面正文找到: $l"; break; fi
+			l="$(printf '%s' "$b" | grep -Eoi 'https?://[^"<> ]+(webauth|eportal|srun|portal|login)[^"<> ]*' | head -n1)"
+			[ -n "$l" ] && { PORTAL="$l"; out "  页面正文里找到: $l"; break; }
 		done
 	fi
+	[ -z "$PORTAL" ] && out "  !! 没探到门户（可能已在线 / 走 802.1X 客户端认证 / 门户只对特定内网 IP 响应）"
 
-	if [ -z "$PORTAL" ]; then
-		out "  ⚠ 没探测到门户地址。可能：① 已经在线；② 学校用的是 802.1X（不是网页认证）；"
-		out "     ③ 门户只对内网某个 IP 响应（那就再跑一次 capture 抓包看看）"
-	fi
-
+	out ""; out "---- 2) 门户地址与参数 ----"
 	if [ -n "$PORTAL" ]; then
-		out ""
-		out "-- 2) 门户地址（完整）--"
-		out "  $PORTAL"
-		out ""
-		out "-- 3) 门户参数（从 URL 拆出来的）--"
-		for p in wlanacip wlanacname wlanuserip wlanacmac mac vlan nasip ssid url redirect basip; do
-			v="$(urlparam "$p" "$PORTAL")"
-			[ -n "$v" ] && out "  $p = $v"
+		out "  完整: $PORTAL"
+		out "  基址: $(printf '%s' "$PORTAL" | sed -n 's#\(https\?://[^/]*\).*#\1#p')"
+		for p in wlanuserip wlanacip wlanacname wlanusermac nasip ac_id ssid url redirect ip mac vlan t basip userip; do
+			v="$(param "$p" "$PORTAL")"; [ -n "$v" ] && out "  $p = $(dec "$v")"
 		done
-
-		out ""
-		out "-- 4) 门户登录页 --"
-		page="$(curl -s -m 12 -A "$UA" "$PORTAL" 2>/dev/null)"
-		if [ -n "$page" ]; then
-			out "  <title>: $(printf '%s' "$page" | sed -n 's/.*<title>\(.*\)<\/title>.*/\1/p' | head -n1)"
-			out "  页面字节数: $(printf '%s' "$page" | wc -c)"
-			out "  -- 表单标签（原样）--"
-			printf '%s' "$page" | tr '>' '\n' | grep -i '<form' | sed 's/^[[:space:]]*//' | head -n 3 | while read -r x; do out "    $x"; done
-			out "  -- 隐藏字段 / 输入框（原样）--"
-			printf '%s' "$page" | tr '>' '\n' | grep -i '<input' | sed 's/^[[:space:]]*//' | head -n 40 | while read -r x; do out "    $x"; done
-			out "  -- 指纹（判断哪家认证系统）--"
-			for k in $FINGS; do
-				printf '%s' "$page" | grep -qi -- "$k" && out "    命中: $k"
-			done
-			out "  -- js / 接口线索 --"
-			printf '%s' "$page" | grep -Eo '[A-Za-z0-9_/\.\-]+\.(js|do|action|cgi)' | sort -u | head -n 15 | while read -r x; do out "    $x"; done
-		else
-			out "  （取门户页面失败）"
-		fi
 	fi
 
-	out ""
-	out "-- 5) 本机路由 / 接口快照（写脚本要用）--"
+	out ""; out "---- 3) 门户页面：表单 / 字段 / 指纹 ----"
+	if [ -n "$PORTAL" ]; then
+		pg="$(curl -s -m 12 -A "$UA" "$PORTAL" 2>/dev/null)"
+		out "  title : $(printf '%s' "$pg" | sed -n 's/.*<title>\(.*\)<\/title>.*/\1/p' | head -n1)"
+		out "  字节数: $(printf '%s' "$pg" | wc -c)"
+		out "  [表单]"
+		printf '%s' "$pg" | tr '>' '\n' | grep -i '<form' | sed 's/^ *//' | head -n 5 | while read -r x; do out "    $x"; done
+		out "  [输入字段]"
+		printf '%s' "$pg" | tr '>' '\n' | grep -i '<input' | sed 's/^ *//' | head -n 40 | while read -r x; do out "    $x"; done
+		out "  [JS / 接口线索]"
+		printf '%s' "$pg" | grep -Eo '[A-Za-z0-9_/.-]+\.(js|do|action|cgi)[^"'\'' ]*' | sort -u | head -n 15 | while read -r x; do out "    $x"; done
+		out "  [系统指纹]"
+		for k in srun_portal srun eportal dr1003 user_account user_password webauth wlanacname \
+			chksum ac_id SAM ruijie Ruijie h3c H3C 深澜 城市热点 华为 huawei agilecontroller \
+			rad_user_info portal_login ntlm 802.1x jsVersion terminal_type; do
+			printf '%s' "$pg" | grep -qi -- "$k" && out "    命中: $k"
+		done
+		VENDOR=unknown
+		printf '%s' "$pg" | grep -qi 'srun_portal\|ac_id' && VENDOR=srun
+		printf '%s' "$pg" | grep -qi 'eportal\|dr1003' && VENDOR=eportal
+		printf '%s' "$pg" | grep -qi 'webauth' && VENDOR=h3c
+		printf '%s' "$pg" | grep -qi 'ruijie\|sam' && VENDOR=ruijie
+		out ""; out "  == 判定：$VENDOR 系统 =="
+		BASE="$(printf '%s' "$PORTAL" | sed -n 's#\(https\?://[^/]*\).*#\1#p')"
+		out ""; out "---- 4) 登录命令模板（把 USER / PASS 换成你的账号密码）----"
+		case "$VENDOR" in
+		srun) out "  curl -s -X POST '$BASE/srun_portal' -d 'action=login&username=USER&password=PASS&ac_id=1&ip=$(param wlanuserip "$PORTAL")&type=1&os=PC&name=Windows&double_stack=0&n=200&info='";;
+		eportal) out "  curl -s '$BASE/eportal/portal/login?callback=dr1003&login_method=1&user_account=,0,USER&user_password=PASS&wlan_user_ip=$(param wlanuserip "$PORTAL")&wlan_user_ipv6=&wlan_user_mac=000000000000&wlan_ac_ip=&wlan_ac_name=$(param wlanacname "$PORTAL")&jsVersion=4.1.3&terminal_type=1&lang=zh-cn'";;
+		ruijie) out "  curl -s '$BASE/eportal/?c=Portal&a=login&callback=dr1003&login_method=1&user_account=,0,USER&user_password=PASS&wlan_user_ip=$(param wlanuserip "$PORTAL")&wlan_ac_ip=$(param wlanacip "$PORTAL")'";;
+		h3c) out "  用抓到的 form 提交（字段名以第 3 节的 [输入字段] 为准），典型："; out "  curl -s -X POST '$BASE/portal/login' -d 'userName=USER&passWord=PASS&wlanuserip=$(param wlanuserip "$PORTAL")&wlanacname=$(param wlanacname "$PORTAL")'";;
+		*) out "  没认出厂商，按第 3 节抓到的 form/input 拼 POST："; out "  curl -s -X POST '<form action 的地址>' -d '字段1=值1&字段2=值2'";;
+		esac
+		out "  提示：认证成功后，把上面命令里的 USER/PASS 填进 /etc/auth.conf 就能让自动登录接管"
+	fi
+	out ""; out "---- 5) 路由 / 接口 ----"
 	ip route show 2>/dev/null | head -n 12 | while read -r x; do out "  $x"; done
-	out ""
-	out "==================== 报告结束 ===================="
-	out "（把上面整段复制发出去即可；里面没有你的密码）"
-	cat "$REPORT"
+	out ""; out "========== 报告结束（把整段复制发出来，不含密码）=========="
+	cat "$R"
 }
 
-capture() {
-	secs="${1:-30}"
-	IF="$(wan_if)"
-	if [ -z "$IF" ]; then out "找不到 WAN 接口，抓不了包"; cat "$REPORT"; return 1; fi
-	if ! command -v tcpdump >/dev/null 2>&1; then
-		out "没装 tcpdump（离线包在 路由器离线安装包 里，或 opkg install tcpdump）"
-		cat "$REPORT"; return 1
-	fi
-	if command -v timeout >/dev/null 2>&1; then secs_cmd="timeout $secs"; else secs_cmd=""; fi
-
-	out ""
-	out "-- 6) 抓包分析（接口 $IF；最多 ${secs} 秒、最多 3000 个包；只抓 HTTP/80）--"
-	out "  提示：抓包期间请在要认证的设备上打开浏览器访问任意网站（触发认证）"
-	rm -f "$PCAP"
-	# ！！重要！！/tmp 是内存盘（tmpfs），抓包必须限制大小：
-	#   -s 512   每条包最多抓 512 字节（只看 HTTP 头 + 表单开头，足够分析）
-	#   -c 3000  最多抓 3000 个包（约 1MB 出头）
-	#   timeout  最多抓 ${secs} 秒
-	# 三个限制叠加，pcap 最多 ~1.5MB，绝不会把内存写满。
-	# shellcheck disable=SC2086
-	$secs_cmd tcpdump -i "$IF" -s 512 -c 3000 -w "$PCAP" 'tcp port 80' >/dev/null 2>&1
-	out "  抓包文件: $PCAP  大小: $( [ -f "$PCAP" ] && ls -l "$PCAP" 2>/dev/null | awk '{print $5}' || echo 0 ) 字节（有上限，不会写爆内存）"
-	if [ ! -s "$PCAP" ]; then
-		out "  ⚠ 没抓到包（这段时间没有 HTTP 流量）"
-		cat "$REPORT"; return 0
-	fi
-	out "  抓包文件: $PCAP（可下载后用 Wireshark 细看）"
-	out ""
-	out "  -- 请求行 / 关键请求头（去重）--"
-	tcpdump -r "$PCAP" -A -s 0 2>/dev/null | tr -d '\r' \
-		| grep -aE '^(GET|POST|Host:|User-Agent:|Referer:|Content-Type:)' \
-		| sort -u | head -n 40 | mask >>"$REPORT"
-	out "  -- POST 表单内容（密码已自动打码）--"
-	tcpdump -r "$PCAP" -A -s 0 2>/dev/null | tr -d '\r' \
-		| grep -aE '^[A-Za-z0-9_%\.\-]+=.*' | sort -u | head -n 25 | mask >>"$REPORT"
-	cat "$REPORT"
-}
-
-bg() {
-	rm -f "$RUNNING"
-	: >"$RUNNING"
-	( "$@" >/dev/null 2>&1; rm -f "$RUNNING" ) &
-	echo "已在后台开始，稍等一会儿刷新看报告"
-}
-
-case "${1:-show}" in
-	probe)       probe ;;
-	capture)     capture "$2" ;;
-	probe-bg)    bg "$0" probe ;;
-	capture-bg)  bg "$0" capture "${2:-30}" ;;
-	show)        [ -f "$REPORT" ] && cat "$REPORT" || echo "还没有报告，先点「开始探测」" ;;
-	clear)       rm -f "$REPORT" "$PCAP"; echo "已清空" ;;
-	status)      [ -f "$RUNNING" ] && echo "running=1" || echo "running=0" ;;
-	*)           echo "用法: portal-probe probe|capture [秒]|probe-bg|capture-bg [秒]|show|clear|status" ;;
+case "${1:-probe}" in
+	probe) probe ;;
+	probe-bg)
+		# 网页上「开始探测」调的就是这个：后台跑，避免页面卡住
+		rm -f "$RUN"; : >"$RUN"
+		( "$0" probe >/dev/null 2>&1; rm -f "$RUN" ) &
+		echo "已在后台开始探测，等 10~20 秒后点「查看报告」"
+		;;
+	status) [ -f "$RUN" ] && echo "running=1" || echo "running=0" ;;
+	show)  [ -f "$R" ] && cat "$R" || echo "还没有报告，先跑 portal-probe probe" ;;
+	clear) rm -f "$R"; echo 已清空 ;;
+	login-help) [ -f "$R" ] && sed -n '/4) 登录命令模板/,/5) /p' "$R" || echo "先跑 probe" ;;
+	*) echo "用法: portal-probe probe|show|clear|login-help" ;;
 esac
 exit 0

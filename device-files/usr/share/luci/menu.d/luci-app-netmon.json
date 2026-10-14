@@ -1,0 +1,10 @@
+{
+	"admin/services/netmon": {
+		"title": "网络波动监测",
+		"order": 58,
+		"action": {
+			"type": "view",
+			"path": "netmon"
+		}
+	}
+}
