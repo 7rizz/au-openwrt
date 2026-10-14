@@ -1,0 +1,72 @@
+#!/bin/sh
+# 网络波动监测（只读日志，页面秒开）  by au学长 V：aauuo0
+# 采样由 /etc/init.d/netmon-sampler 后台每 30 秒写 /tmp/netmon.log
+LOG=/tmp/netmon.log
+q="$(printf '%s' "$QUERY_STRING")"
+[ "$q" = "clear" ] && : >"$LOG"
+printf 'Content-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\n\r\n'
+case "$q" in clear) echo '<p style="color:#fc6">已清空日志</p>';; esac
+cat <<'EOF'
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="15">
+<title>网络波动监测</title><style>
+body{font-family:-apple-system,"Microsoft YaHei",sans-serif;margin:16px;background:#11141a;color:#e9e9e9}
+h2{margin:0 0 4px}h3{margin:16px 0 8px;font-size:15px;color:#9ab}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:5px 7px;border-bottom:1px solid #232a36;text-align:left}
+th{color:#8ea;font-size:12.5px}
+.g{color:#3c9}.y{color:#fc6}.r{color:#f66}.m{color:#889}
+.bar{display:inline-block;height:8px;background:#7af;border-radius:2px;vertical-align:middle}
+.wm{position:fixed;right:12px;bottom:8px;color:#556;font-size:12px}
+</style></head><body>
+<h2>网络波动监测</h2>
+<p style="color:#889;font-size:13px;margin:0">作者：au学长 V：aauuo0　后台每 30 秒采样一次（不依赖本页面），日志保留 48 小时</p>
+<div class="wm">作者：au学长 V：aauuo0</div>
+EOF
+if pgrep -f netmon-sample >/dev/null 2>&1; then
+	echo '<p><span class=g>● 后台采样器运行中</span>'
+else
+	echo '<p><span class=r>● 后台采样器没在跑</span> <span class=m>（ssH 里执行 /etc/init.d/netmon-sampler start）</span>'
+fi
+echo "　<a href='?run' style='color:#7af'>刷新</a>　<a href='?clear' style='color:#f88'>清空</a></p>"
+if [ -s "$LOG" ]; then
+	n=$(wc -l <"$LOG")
+	first=$(head -n1 "$LOG" | cut -d' ' -f1,2); last=$(tail -n1 "$LOG" | cut -d' ' -f1,2)
+	printf '<p class=m>共 <b>%s</b> 条：%s ～ %s　（后台每 30 秒一次，下面表格是逐条原始数据）</p>' "$n" "$first" "$last"
+	# 汇总窗口：$1=取最后几行
+	win() {
+		tail -n "$1" "$LOG" | awk '
+			{ n++; g+=$3; d+=$5+$7; if($5+0>mx)mx=$5; if($7+0>mx)mx=$7; l+=$4+$6+$8; t+=$9
+			  v=$7+0; if(p>0){dd=v-p; if(dd<0)dd=-dd; s+=dd; m++} p=v }
+			END{ if(n) printf "%d|%.1f|%.1f|%.1f|%.1f|%.1f|%.0f", n, g/n, d/(2*n), mx, (m?s/m:0), l/(3*n), t/n
+			     else printf "0|-|-|-|-|-|-" }'
+	}
+	echo "<h3>波动汇总</h3><table><tr><th>时间窗</th><th>采样</th><th>网关 RTT</th><th>公网 RTT(均)</th><th>最高 RTT</th><th>抖动</th><th>丢包</th><th>TCP握手</th></tr>"
+	for spec in "2|最近 1 分钟" "20|最近 10 分钟" "120|最近 1 小时"; do
+		ln="${spec%%|*}"; label="${spec##*|}"
+		d="$(win "$ln")"; IFS='|' read -r c ga da ma ji lo tc <<EOF
+$d
+EOF
+		cls=g; awk -v j="$ji" -v l="$lo" 'BEGIN{exit !(j+0>30||l+0>5)}' && cls=r
+		[ "$cls" = g ] && awk -v j="$ji" -v l="$lo" -v m="$ma" 'BEGIN{exit !(j+0>10||l+0>1||m+0>120)}' && cls=y
+		printf '<tr><td><b>%s</b></td><td>%s 次</td><td class=%s>%s ms</td><td class=%s>%s ms</td><td>%s ms</td><td class=%s>%s ms</td><td class=%s>%s%%</td><td class=m>%s ms</td></tr>\n' \
+			"$label" "$c" "$cls" "$ga" "$cls" "$da" "$ma" "$cls" "$ji" "$cls" "$lo" "$tc"
+	done
+	echo "</table><p class=m style='font-size:12.5px'>抖动 = 公网 RTT 相邻两次差值的平均，<b>游戏最看这个</b>：&lt;10ms 好、10~30 一般、&gt;30 会明显卡。丢包比延迟更要命。</p>"
+	echo "<table><tr><th>时间</th><th>网关</th><th>223.5.5.5</th><th>119.29.29.29</th><th>波动图</th><th>TCP握手</th><th>下行/上行 KB/s</th></tr>"
+	tail -n 120 "$LOG" | awk '
+		function cls(v,l){ if(l+0>5) return "r"; if(v+0>120||l+0>1) return "y"; return "g" }
+		{
+		bar=($8+0)/300*60; if(bar>60)bar=60; if(bar<1)bar=1
+		printf "<tr><td>%s %s</td><td class=%s>%s / %s%%</td><td class=%s>%s / %s%%</td><td class=%s>%s / %s%%</td><td><span class=bar style=\"width:%dpx\"></span></td><td class=m>%s ms</td><td class=m>%s / %s</td></tr>\n", \
+			$1,$2, cls($3,$4),$3,$4, cls($5,$6),$5,$6, cls($7,$8),$7,$8, bar, $9, $10,$11 }'
+	echo "</table><p class=m style='font-size:12.5px'>颜色：<span class=g>绿=好</span> <span class=y>黄=RTT&gt;120ms 或丢包&gt;1%</span> <span class=r>红=丢包&gt;5%</span>　· 网关那行差=你和路由器之间（WiFi/干扰）；公网两行差=学校出口/运营商　· TCP握手是走真实 TCP 路径的交叉验证，和 ping 一起飙才说明真有问题</p>"
+	echo "<h3>原始日志（最近 40 条，每次测试一行）</h3><pre style='background:#161a21;padding:10px;border-radius:6px;font-size:12.5px;overflow:auto;max-height:340px'>"
+	echo "时间            网关      223.5.5.5   119.29.29.29  TCP  下行/上行"
+	tail -n 40 "$LOG" | awk '{ printf "%-14s %-8s %-8s %-8s %-5s %s/%s KB/s\n", $1" "$2, $3"ms/"$4"%", $5"ms/"$6"%", $7"ms/"$8"%", $9"ms", $10, $11 }'
+	echo "</pre>"
+else
+	echo '<p class=m>还没有数据。先启动采样器（默认已开机自启），等 1 分钟就有第一条记录。</p>'
+fi
+echo '</body></html>'

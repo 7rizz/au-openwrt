@@ -1,0 +1,330 @@
+#!/bin/sh
+# ============================================================================
+# UA 防检测中心 · 后端控制脚本
+#
+# 用法：
+#   ua-detect-ctl status
+#   ua-detect-ctl set <key> <value>      # key 见 /etc/config/uadetect
+#   ua-detect-ctl apply                   # 按当前 uci 配置重新应用
+#   ua-detect-ctl firewall-on [ttl]
+#   ua-detect-ctl firewall-off
+#
+# 设计说明：UA3F 与 UA2F 互斥，本脚本保证同一时刻只有一个在运行。
+# ============================================================================
+
+CFG="uadetect"
+
+# 注意：读出来顺手去掉外层引号。早期版本的脚本用 uci set "x.y='值'"
+# 把引号也写进去了，这里做一层容错，避免 "enabled='1'" 这种脏值。
+cfg() {
+	local v
+	v="$(uci -q get "$CFG.main.$1" 2>/dev/null)"
+	v="${v#\'}"; v="${v%\'}"
+	v="${v#\"}"; v="${v%\"}"
+	printf '%s' "$v"
+}
+
+# 写 uci：值不要自带引号（参数里出现 ' 会被 uci 当成值的一部分存进去）
+uciset() {
+	local v="$2"
+	v="${v#\'}"; v="${v%\'}"
+	uci set "$CFG.main.$1=$v"
+}
+def() { local v; v="$(cfg "$1")"; [ -z "$v" ] && v="$2"; echo "$v"; }
+flag() { local v; v="$(cfg "$1")"; [ -z "$v" ] && v="$2"; [ "$v" = "1" ] && echo 1 || echo 0; }
+
+UA_IPHONE='Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+UA_ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36'
+UA_WINDOWS='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+
+resolve_ua() {
+	local custom persona
+	custom="$(cfg custom_ua)"
+	[ -n "$custom" ] && { echo "$custom"; return; }
+	persona="$(def persona iphone)"
+	case "$persona" in
+		iphone)  echo "$UA_IPHONE"  ;;
+		android) echo "$UA_ANDROID" ;;
+		windows) echo "$UA_WINDOWS" ;;
+		*)       echo "$UA_IPHONE"  ;;
+	esac
+}
+
+default_ttl() {
+	[ "$(def persona iphone)" = "windows" ] && echo 128 || echo 64
+}
+
+have_nft() { command -v nft >/dev/null 2>&1; }
+
+# ---------------------------------------------------------------------------
+# 防火墙：TTL
+# ---------------------------------------------------------------------------
+fw_ttl_on() {
+	local ttl="$1"
+	[ -z "$ttl" ] && ttl="$(default_ttl)"
+	if have_nft; then
+		nft add table ip uadetect_ttl 2>/dev/null
+		nft add chain ip uadetect_ttl postrouting \
+			'{ type filter hook postrouting priority mangle ; }' 2>/dev/null
+		nft flush chain ip uadetect_ttl postrouting 2>/dev/null
+		nft add rule ip uadetect_ttl postrouting ip ttl set "$ttl" 2>/dev/null
+	else
+		iptables -t mangle -N UAD_TTL 2>/dev/null
+		iptables -t mangle -F UAD_TTL 2>/dev/null
+		iptables -t mangle -D POSTROUTING -j UAD_TTL 2>/dev/null
+		iptables -t mangle -A POSTROUTING -j UAD_TTL
+		iptables -t mangle -A UAD_TTL -j TTL --ttl-set "$ttl" 2>/dev/null
+	fi
+	logger -t uadetect "TTL 固定为 $ttl"
+}
+
+fw_ttl_off() {
+	have_nft && nft delete table ip uadetect_ttl 2>/dev/null
+	iptables -t mangle -D POSTROUTING -j UAD_TTL 2>/dev/null
+	iptables -t mangle -F UAD_TTL 2>/dev/null
+	iptables -t mangle -X UAD_TTL 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# 防火墙：NTP 劫持到本机（统一时钟）
+# ---------------------------------------------------------------------------
+fw_ntp_on() {
+	if have_nft; then
+		nft add table ip uadetect_nat 2>/dev/null
+		nft add chain ip uadetect_nat prerouting \
+			'{ type nat hook prerouting priority dstnat ; }' 2>/dev/null
+		nft flush chain ip uadetect_nat prerouting 2>/dev/null
+		nft add rule ip uadetect_nat prerouting ip daddr \
+			'{ 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }' \
+			return 2>/dev/null
+		nft add rule ip uadetect_nat prerouting udp dport 123 redirect to :123 2>/dev/null
+	else
+		local gw
+		gw="$(uci -q get network.lan.ipaddr)"; [ -z "$gw" ] && gw="192.168.1.1"
+		iptables -t nat -N UAD_NTP 2>/dev/null
+		iptables -t nat -F UAD_NTP 2>/dev/null
+		iptables -t nat -D PREROUTING -p udp --dport 123 -j UAD_NTP 2>/dev/null
+		iptables -t nat -A PREROUTING -p udp --dport 123 -j UAD_NTP
+		iptables -t nat -A UAD_NTP -d 0.0.0.0/8 -j RETURN
+		iptables -t nat -A UAD_NTP -d 127.0.0.0/8 -j RETURN
+		iptables -t nat -A UAD_NTP -d 192.168.0.0/16 -j RETURN
+		iptables -t nat -A UAD_NTP -p udp --dport 123 -j DNAT --to-destination "$gw"
+	fi
+	logger -t uadetect "NTP 已劫持到路由器"
+}
+
+fw_ntp_off() {
+	have_nft && nft delete table ip uadetect_nat 2>/dev/null
+	iptables -t nat -D PREROUTING -p udp --dport 123 -j UAD_NTP 2>/dev/null
+	iptables -t nat -F UAD_NTP 2>/dev/null
+	iptables -t nat -X UAD_NTP 2>/dev/null
+}
+
+firewall_off() {
+	fw_ttl_off
+	fw_ntp_off
+}
+
+# ---------------------------------------------------------------------------
+# 应用 UA3F
+# ---------------------------------------------------------------------------
+apply_ua3f() {
+	local ua ttl
+	ua="$(resolve_ua)"
+	ttl="$(def ttl "$(default_ttl)")"
+
+	if [ ! -x /usr/bin/ua3f ]; then
+		logger -t uadetect "UA3F 未安装，跳过"
+		return 1
+	fi
+
+	uci set ua3f.enabled.enabled='1'
+	uci set ua3f.main.server_mode='TPROXY'
+	uci set ua3f.main.bind='0.0.0.0'
+	uci set ua3f.main.port='1080'
+	uci set ua3f.main.rewrite_mode='RULE'
+	uci set ua3f.main.ua="$ua"
+	uci set ua3f.main.log_level='WARN'
+
+	# L3 重写
+	uci set ua3f.main.l3_rewrite_ttl="$(flag handle_firewall 1)"
+	uci set ua3f.main.l3_rewrite_ttl_value="$ttl"
+	uci set ua3f.main.l3_rewrite_tcpts="$(flag l3_tcpts 1)"
+	uci set ua3f.main.l3_rewrite_ipid="$(flag l3_ipid 1)"
+	uci set ua3f.main.l3_rewrite_tcpwin='0'
+	uci set ua3f.main.l3_rewrite_block_quic="$(flag block_quic 0)"
+	uci set ua3f.main.l3_rewrite_bpf_offload='0'
+
+	# 重武器一律关（MT7621 上容易掉线）
+	uci set ua3f.main.desync_reorder='0'
+	uci set ua3f.main.desync_inject='0'
+	uci set ua3f.main.mitm_enabled='0'
+	uci commit ua3f
+
+	/etc/init.d/ua3f enable  >/dev/null 2>&1
+	/etc/init.d/ua3f restart >/dev/null 2>&1
+
+	# TTL 由 UA3F 的 L3 负责，这里只补 NTP
+	if [ "$(flag handle_firewall 1)" = "1" ]; then
+		fw_ntp_on
+	else
+		fw_ntp_off
+	fi
+	logger -t uadetect "已应用 UA3F（TTL=$ttl）"
+}
+
+# ---------------------------------------------------------------------------
+# 应用 UA2F
+# ---------------------------------------------------------------------------
+apply_ua2f() {
+	local ua ttl
+	ua="$(resolve_ua)"
+	ttl="$(def ttl "$(default_ttl)")"
+
+	if ! command -v ua2f >/dev/null 2>&1; then
+		logger -t uadetect "UA2F 未安装，跳过"
+		return 1
+	fi
+
+	uci set ua2f.enabled.enabled='1'
+	# 注意：UA2F 用 NFQUEUE（它自己的默认模式）。
+	# 24.10 的新版 nftables 不接受 UA2F 生成的 TPROXY 规则
+	# （报 "Transparent proxy support requires transport protocol match"），
+	# 所以这里不要用 TPROXY。
+	uci set ua2f.main.mode='NFQUEUE'
+	uci set ua2f.main.listen_port='10010'
+	uci set ua2f.main.custom_ua="$ua"
+	uci set ua2f.main.disable_connmark='0'
+	uci set ua2f.firewall.handle_fw='1'
+	uci set ua2f.firewall.handle_tls="$(flag handle_443 0)"
+	uci set ua2f.firewall.handle_mmtls="$(flag handle_mmtls 0)"
+	uci set ua2f.firewall.handle_intranet="$(flag handle_lan 1)"
+	uci commit ua2f
+
+	service ua2f enable  >/dev/null 2>&1
+	service ua2f restart >/dev/null 2>&1
+
+	# UA2F 只改 UA，TTL 得我们自己上
+	if [ "$(flag handle_firewall 1)" = "1" ]; then
+		fw_ttl_on "$ttl"
+		fw_ntp_on
+	else
+		fw_ttl_off
+		fw_ntp_off
+	fi
+	logger -t uadetect "已应用 UA2F（TTL=$ttl）"
+}
+
+# ---------------------------------------------------------------------------
+# 统一应用入口：保证两个引擎互斥
+# ---------------------------------------------------------------------------
+apply_all() {
+	local enabled engine
+	enabled="$(def enabled 1)"
+	engine="$(def engine ua3f)"
+
+	# 先无条件停掉两个引擎
+	/etc/init.d/ua3f stop    >/dev/null 2>&1
+	/etc/init.d/ua3f disable >/dev/null 2>&1
+	service ua2f stop        >/dev/null 2>&1
+	service ua2f disable     >/dev/null 2>&1
+
+	if [ "$enabled" != "1" ]; then
+		firewall_off
+		logger -t uadetect "防护已禁用"
+		return 0
+	fi
+
+	case "$engine" in
+		ua3f) apply_ua3f ;;
+		ua2f) apply_ua2f ;;
+		*)    firewall_off ;;
+	esac
+}
+
+reset_cfg() {
+	uci -q delete "$CFG.main" 2>/dev/null
+	uci set "$CFG.main=uadetect"
+	uciset enabled 1
+	uciset engine ua3f
+	uciset persona iphone
+	uciset custom_ua ''
+	uciset ttl 64
+	uciset handle_lan 1
+	uciset handle_firewall 1
+	uciset handle_443 0
+	uciset handle_mmtls 0
+	uciset l3_tcpts 1
+	uciset l3_ipid 1
+	uciset block_quic 0
+	uci commit "$CFG"
+}
+
+do_set() {
+	local k="$1" v="$2"
+	case "$k" in
+		apply|save) apply_all ;;
+		reset)      reset_cfg; apply_all ;;
+		use_ua3f)
+			uciset enabled 1
+			uciset engine ua3f
+			uci commit "$CFG"
+			apply_all
+			;;
+		use_ua2f)
+			uciset enabled 1
+			uciset engine ua2f
+			uci commit "$CFG"
+			apply_all
+			;;
+		stop)
+			uciset enabled 0
+			uci commit "$CFG"
+			apply_all
+			;;
+		persona)
+			uciset persona "$v"
+			if [ "$v" = "windows" ]; then
+				uciset ttl 128
+			else
+				uciset ttl 64
+			fi
+			uci commit "$CFG"
+			apply_all
+			;;
+		'')         apply_all ;;
+		*)          uciset "$k" "$v" && uci commit "$CFG" && apply_all ;;
+	esac
+}
+
+do_status() {
+	printf 'engine=%s\n'          "$(def engine ua3f)"
+	printf 'enabled=%s\n'         "$(def enabled 1)"
+	printf 'persona=%s\n'         "$(def persona iphone)"
+	printf 'ttl=%s\n'             "$(def ttl "$(default_ttl)")"
+	printf 'ua3f_installed=%s\n'  "$([ -x /usr/bin/ua3f ] && echo 1 || echo 0)"
+	printf 'ua2f_installed=%s\n'  "$(command -v ua2f >/dev/null 2>&1 && echo 1 || echo 0)"
+	printf 'ua3f_running=%s\n'    "$(pgrep -f '/usr/bin/ua3f' >/dev/null 2>&1 && echo 1 || echo 0)"
+	printf 'ua2f_running=%s\n'    "$(pgrep -f 'ua2f'        >/dev/null 2>&1 && echo 1 || echo 0)"
+	printf 'ua3f_pid=%s\n'        "$(pgrep -f '/usr/bin/ua3f' 2>/dev/null | head -n1)"
+	printf 'ua2f_pid=%s\n'        "$(pgrep -f '/usr/bin/ua2f' 2>/dev/null | head -n1)"
+	printf 'handle_lan=%s\n'      "$(flag handle_lan 1)"
+	printf 'handle_firewall=%s\n' "$(flag handle_firewall 1)"
+	printf 'handle_443=%s\n'      "$(flag handle_443 0)"
+	printf 'handle_mmtls=%s\n'    "$(flag handle_mmtls 0)"
+	printf 'l3_tcpts=%s\n'        "$(flag l3_tcpts 1)"
+	printf 'l3_ipid=%s\n'         "$(flag l3_ipid 1)"
+	printf 'block_quic=%s\n'      "$(flag block_quic 0)"
+}
+
+case "${1:-status}" in
+	status)       do_status ;;
+	set)          do_set "$2" "$3" ;;
+	apply|sync)   apply_all ;;
+	firewall-on)  fw_ttl_on "$2"; fw_ntp_on ;;
+	firewall-off) firewall_off ;;
+	*)
+		echo "用法: $0 {status|set <key> <value>|apply|firewall-on [ttl]|firewall-off}"
+		exit 1
+		;;
+esac

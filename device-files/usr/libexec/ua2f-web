@@ -1,0 +1,112 @@
+#!/bin/sh
+# UA2F 面板后端 v2 by au学长 V：aauuo0 —— 只有白名单动作，网页拿不到 shell
+PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH; export PATH
+
+UA_WINDOWS='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+UA_IPHONE='Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+UA_ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36'
+UA_MAC='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
+UA_DEFAULT="$UA_WINDOWS"
+
+ttl_get() { nft list chain ip ua2f_ttl postrouting 2>/dev/null | sed -n 's/.*ip ttl set \([0-9]*\).*/\1/p' | head -n1; }
+
+ttl_set() {
+	[ -n "$1" ] || return 1
+	command -v nft >/dev/null 2>&1 || return 1
+	nft list table ip ua2f_ttl >/dev/null 2>&1 || nft add table ip ua2f_ttl
+	nft list chain ip ua2f_ttl postrouting >/dev/null 2>&1 || \
+		nft 'add chain ip ua2f_ttl postrouting { type filter hook postrouting priority mangle; }' 2>/dev/null
+	nft flush chain ip ua2f_ttl postrouting 2>/dev/null
+	nft add rule ip ua2f_ttl postrouting ip ttl set "$1" 2>/dev/null
+	nft list chain ip ua2f_ttl postrouting 2>/dev/null | grep -q "ip ttl set $1" || return 1
+	uci -q set ua2f.main.fix_ttl='1'; uci -q commit ua2f
+	echo "TTL 已固定为 $1"
+}
+
+ttl_off() {
+	nft delete table ip ua2f_ttl 2>/dev/null
+	uci -q set ua2f.main.fix_ttl='0'; uci -q commit ua2f
+	echo "TTL 固定已关闭"
+}
+
+restart_ua2f() { /etc/init.d/ua2f restart >/dev/null 2>&1; }
+
+# 人格 = UA 串 + 对应 TTL（Windows 128，手机/Mac 64），两个一起改，保证不打架
+persona_set() {
+	case "$1" in
+		windows) ua="$UA_WINDOWS"; ttl=128 ;;
+		iphone)  ua="$UA_IPHONE";  ttl=64  ;;
+		android) ua="$UA_ANDROID"; ttl=64  ;;
+		mac)     ua="$UA_MAC";     ttl=64  ;;
+		*) echo "ERROR: 人格只能是 windows/iphone/android/mac" >&2; exit 1 ;;
+	esac
+	uci -q set ua2f.main.persona="$1"
+	uci -q set ua2f.main.custom_ua="$ua"
+	uci -q delete ua2f.main.fix_ttl_value       # 清掉手动覆盖值，避免和人品对应的 TTL 不一致
+	uci -q commit ua2f
+	restart_ua2f
+	ttl_set "$ttl" >/dev/null
+	echo "人格 -> $1，TTL -> $ttl"
+}
+
+case "$1" in
+	persona_windows) persona_set windows ;;
+	persona_iphone)  persona_set iphone  ;;
+	persona_android) persona_set android ;;
+	persona_mac)     persona_set mac     ;;
+
+	ua_save)
+		v="$(printf '%s' "$2" | tr -cd 'A-Za-z0-9 ._/();:-,+')"
+		[ -n "$v" ] || { echo "ERROR: UA 不能为空" >&2; exit 1; }
+		uci -q set ua2f.main.custom_ua="$v"
+		uci -q set ua2f.main.persona='custom'
+		uci -q commit ua2f; restart_ua2f
+		echo "自定义 UA 已保存并生效"
+		;;
+	ttl_custom) ttl_set "$2" ;;
+	ttl_on)
+		p="$(uci -q get ua2f.main.persona)"
+		v="$(uci -q get ua2f.main.fix_ttl_value)"; [ -n "$v" ] || v="$ttl_get"
+		[ -n "$v" ] || { [ "$p" = "windows" ] && v=128 || v=64; }
+		ttl_set "$v"
+		;;
+	ttl_off) ttl_off ;;
+
+	start)   /etc/init.d/ua2f enable >/dev/null 2>&1; /etc/init.d/ua2f start; [ "$(uci -q get ua2f.main.fix_ttl)" = "1" ] && "$0" ttl_on; ;;
+	stop)    /etc/init.d/ua2f stop ;;
+	restart) restart_ua2f; echo "已重启" ;;
+	disable) /etc/init.d/ua2f stop; /etc/init.d/ua2f disable; echo "已停用并取消自启" ;;
+
+	set_fw)     uci -q set ua2f.firewall.handle_fw="$2";      uci -q commit ua2f; restart_ua2f ;;
+	set_lan)    uci -q set ua2f.firewall.handle_intranet="$2";uci -q commit ua2f; restart_ua2f ;;
+	set_tls)    uci -q set ua2f.firewall.handle_tls="$2";     uci -q commit ua2f; restart_ua2f ;;
+
+	status)
+		pgrep -f '/usr/bin/ua2f' >/dev/null 2>&1 && echo "running=1" || echo "running=0"
+		printf 'pid=%s\n'     "$(pgrep -f '/usr/bin/ua2f' 2>/dev/null | head -n1)"
+		/etc/init.d/ua2f enabled >/dev/null 2>&1 && echo "enabled=1" || echo "enabled=0"
+		nft list table inet ua2f >/dev/null 2>&1 && echo "rules=1" || echo "rules=0"
+		nft list table ip ua2f_ttl >/dev/null 2>&1 && echo "ttl_on=1" || echo "ttl_on=0"
+		printf 'persona=%s\n' "$(uci -q get ua2f.main.persona)"
+		printf 'ttl=%s\n'     "$(ttl_get)"
+		printf 'mode=%s\n'    "$(uci -q get ua2f.main.mode)"
+		printf 'port=%s\n'    "$(uci -q get ua2f.main.listen_port)"
+		printf 'handle_fw=%s\n' "$(uci -q get ua2f.firewall.handle_fw)"
+		printf 'intranet=%s\n'  "$(uci -q get ua2f.firewall.handle_intranet)"
+		printf 'handle_tls=%s\n' "$(uci -q get ua2f.firewall.handle_tls)"
+		printf 'ua_full=%s\n'   "$(uci -q get ua2f.main.custom_ua)"
+		;;
+	log)  logread | grep -i ua2f | tail -n 40 ;;
+	check)
+		echo "== UA2F 自检 =="
+		pgrep -f '/usr/bin/ua2f' >/dev/null 2>&1 && echo "进程: 在跑" || echo "进程: 没跑"
+		nft list table inet ua2f >/dev/null 2>&1 && echo "NFQUEUE 规则: 已下发" || echo "NFQUEUE 规则: 没有"
+		v="$(ttl_get)"; [ -n "$v" ] && echo "固定 TTL: $v" || echo "固定 TTL: 未开"
+		echo "人格: $(uci -q get ua2f.main.persona)"
+		for l in libnetfilter_queue.so.1 libnetfilter_conntrack.so.3 libmnl.so.0 libnfnetlink.so.0; do
+			[ -e /usr/lib/$l ] && echo "库 $l: 有" || echo "库 $l: 缺（缺了才会起不来）"
+		done
+		echo "本机 IPv4:"; ip -4 addr show up 2>/dev/null | sed -n 's/^ *inet \([0-9.]*\)\/.*/  \1/p'
+		;;
+	*) echo "用法: ua2f-web status|start|stop|restart|disable|log|check|persona_windows|persona_iphone|persona_android|persona_mac|ua_save <ua>|ttl_custom <n>|ttl_on|ttl_off|set_fw <0|1>|set_lan <0|1>|set_tls <0|1>" >&2; exit 1 ;;
+esac

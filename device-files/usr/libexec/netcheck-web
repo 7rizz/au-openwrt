@@ -1,0 +1,50 @@
+#!/bin/sh
+# ================================================================
+# netcheck-web -- helper for the LuCI page (package luci-app-netcheck)
+#     湖南工学院顺枫公寓自动登录插件   作者：au学长   V：aauuo0
+#
+#   netcheck-web test     run auth.sh in the background and capture
+#                         its output in /tmp/netcheck_test.log
+#   netcheck-web clear    empty the log files
+#
+# Only these two commands exist on purpose: the web page gets no
+# shell access, it may only start this fixed list of actions.
+# ================================================================
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+export PATH
+
+[ -r /etc/netcheck.conf ] && . /etc/netcheck.conf
+
+AUTH_SCRIPT="${AUTH_SCRIPT:-/usr/bin/auth.sh}"
+LOG_FILE="${LOG_FILE:-/tmp/netcheck.log}"
+DETAIL_FILE="${DETAIL_FILE:-/tmp/auth_last.log}"
+TEST_FILE="${TEST_FILE:-/tmp/netcheck_test.log}"
+
+case "$1" in
+test)
+	: >"$TEST_FILE"
+
+	if [ ! -x "$AUTH_SCRIPT" ]; then
+		printf 'ERROR: %s not found or not executable\nEXIT=1\n' "$AUTH_SCRIPT" >"$TEST_FILE"
+		exit 0
+	fi
+
+	# Detached on purpose: the HTTP request returns at once and the page
+	# polls the result file, so slow logins cannot hit an RPC timeout.
+	( "$AUTH_SCRIPT" >"$TEST_FILE" 2>&1
+	  printf 'EXIT=%s\n' "$?" >>"$TEST_FILE" ) </dev/null >/dev/null 2>&1 &
+	;;
+clear)
+	: >"$LOG_FILE" 2>/dev/null
+	: >"$DETAIL_FILE" 2>/dev/null
+	: >"$TEST_FILE" 2>/dev/null
+	echo "cleared"
+	;;
+*)
+	echo "usage: netcheck-web test|clear" >&2
+	exit 1
+	;;
+esac
+
+exit 0
