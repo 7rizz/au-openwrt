@@ -158,6 +158,8 @@ jobs:
           chmod 0755 openwrt/files/usr/libexec/*  2>/dev/null || true
           # rpcd 插件在子目录里，必须单独给执行位，否则 Argon 设置页挂在 /usr/libexec/rpcd/ 的脚本跑不起来
           chmod 0755 openwrt/files/usr/libexec/rpcd/* 2>/dev/null || true
+          # cgi-bin 里的网页脚本必须可执行，否则 uhttpd 会返回 403 Forbidden
+          chmod 0755 openwrt/files/www/cgi-bin/* 2>/dev/null || true
           chmod 0755 openwrt/files/root/*.sh      2>/dev/null || true
           find openwrt/files -type f
 
