@@ -1,0 +1,146 @@
+#!/bin/sh
+# =====================================================================
+#  红米 AC2100 私人固件 —— 首次开机自动配置
+#  只在固件刷好后第一次启动时执行一次，执行完本文件会自动删除。
+#  想改 IP / 主机名 / 密码，改下面这几行就行。
+# =====================================================================
+
+HOSTNAME='aauuo0'               # 路由器名字（LuCI 左上角显示的就是它）
+LAN_IP='192.168.1.1'            # 后台地址（改完用新地址进后台）
+ROOT_PW='root'                  # 默认登录密码（建议第一次登录后改掉）
+
+# ---------------------------------------------------------------
+# 1. 主机名 / 时区 / 时间同步
+# ---------------------------------------------------------------
+uci set system.@system[0].hostname="$HOSTNAME"
+uci set system.@system[0].description='破解校园网专用固件'
+uci set system.@system[0].timezone='CST-8'
+uci set system.@system[0].zonename='Asia/Shanghai'
+
+uci -q delete system.ntp.server
+uci add_list system.ntp.server='ntp.aliyun.com'
+uci add_list system.ntp.server='cn.pool.ntp.org'
+uci add_list system.ntp.server='time1.cloud.tencent.com'
+uci set system.ntp.enabled='1'
+# 作为 NTP 服务器对外应答：防检测会把终端的 NTP(123) 劫持到路由器，
+# 路由器自己必须能应答，否则设备取不到时间反而异常（这一点参照恩山那套固件）
+uci set system.ntp.enable_server='1'
+
+# ---------------------------------------------------------------
+# 1b. 固件显示名（LuCI「状态 → 概况」里的「固件版本」那一行）
+#     改名字的话，这里和 /etc/init.d/personal-branding 要一起改
+# ---------------------------------------------------------------
+FW_NAME='by au学长 v：aauuo0 倒卖司马'
+if [ -f /etc/openwrt_release ]; then
+	sed -i "s|^DISTRIB_DESCRIPTION=.*|DISTRIB_DESCRIPTION='$FW_NAME'|" /etc/openwrt_release
+fi
+
+# ---------------------------------------------------------------
+# 2. 局域网地址
+# ---------------------------------------------------------------
+uci set network.lan.ipaddr="$LAN_IP"
+uci set network.lan.netmask='255.255.255.0'
+uci set dhcp.lan.start='100'
+uci set dhcp.lan.limit='150'
+uci set dhcp.lan.leasetime='12h'
+
+# ---------------------------------------------------------------
+# 3. 中文界面 + Argon 主题
+# ---------------------------------------------------------------
+# 注意：各版本的中文语言代码不一样，而且必须和 /usr/lib/lua/luci/i18n/*.lmo
+# 的文件名后缀一致，写错界面就会退回英文。
+# OpenWrt 24.10 官方中文包的文件名是 *.zh-cn.lmo（所以优先用 zh-cn），
+# 老 LEDE/Lean 用 zh_cn，部分版本用 zh_Hans。这里按实际存在的 .lmo 来定。
+LANG_CODE=''
+for code in zh-cn zh_Hans zh_cn; do
+	if ls /usr/lib/lua/luci/i18n/*."$code".lmo >/dev/null 2>&1; then
+		LANG_CODE="$code"
+		break
+	fi
+done
+uci set luci.main.lang="${LANG_CODE:-zh_Hans}"
+# 主题：用 Argon（支持 24.10，自带设置页）；没编进去就保持默认主题。
+# 必须先判断目录存在，否则主题没编进去时后台会白屏。
+# 不要用 Design 主题（luci-theme-design）：那是老式 Lua 主题，24.10 上会直接报错。
+if [ -d /www/luci-static/argon ]; then
+	uci set luci.main.mediaurlbase='/luci-static/argon'
+	uci set luci.main.theme='argon'
+fi
+
+# ---------------------------------------------------------------
+# 4. 首次开机设置 root 密码
+#    ① 优先用编译时算好的哈希（/etc/rootpw.hash，由编译流程生成，最可靠）
+#    ② 没有就用 busybox 的 cryptpw / mkpasswd 现场算
+#    ③ 再不行就用 passwd 从标准输入兜底
+#    实在都失败就跳过（密码留空，自己进后台设一次，不会锁死设备）
+# ---------------------------------------------------------------
+try_hash() {
+	command -v "$1" >/dev/null 2>&1 || return 1
+	local out=''
+	out="$("$1" -m md5 -S "$SALT" "$ROOT_PW" 2>/dev/null)"
+	[ -n "$out" ] || out="$("$1" -m md5 "$ROOT_PW" 2>/dev/null)"
+	[ -n "$out" ] || out="$("$1" "$ROOT_PW" 2>/dev/null)"
+	[ -n "$out" ] || return 1
+	printf '%s' "$out"
+}
+
+if [ -n "$ROOT_PW" ]; then
+	HASH=''
+	# ① 编译时生成好的哈希
+	for f in /etc/rootpw.hash /etc/uci-defaults/98-rootpw.hash; do
+		if [ -s "$f" ]; then
+			HASH="$(cat "$f")"
+			break
+		fi
+	done
+	# ② 现场算
+	if [ -z "$HASH" ]; then
+		SALT="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 8)"
+		HASH="$(try_hash cryptpw)"
+		[ -n "$HASH" ] || HASH="$(try_hash mkpasswd)"
+	fi
+
+	case "$HASH" in
+		\$1\$*|\$5\$*|\$6\$*)
+			sed -i "s|^root:[^:]*:|root:$HASH:|" /etc/shadow
+			;;
+		*)
+			# ③ 兜底：busybox passwd 读标准输入（不支持非交互时会自动失败）
+			printf '%s\n%s\n' "$ROOT_PW" "$ROOT_PW" | passwd root >/dev/null 2>&1
+			;;
+	esac
+	unset HASH SALT
+fi
+
+# ---------------------------------------------------------------
+# 5. 无线设置交给 /etc/init.d/personal-wifi 处理（时序更稳），这里只启用它
+# ---------------------------------------------------------------
+[ -x /etc/init.d/personal-wifi ] && /etc/init.d/personal-wifi enable
+[ -x /etc/init.d/personal-branding ] && /etc/init.d/personal-branding enable
+
+# ---------------------------------------------------------------
+# 6. 校园网防检测 + 自动登录（组件已内置在固件里，这里只负责开机启用）
+#    UA 引擎的详细参数在 /etc/config/uadetect，可在
+#    LuCI「服务 → UA 防检测中心」里随时改。
+# ---------------------------------------------------------------
+[ -x /etc/init.d/uadetect ] && /etc/init.d/uadetect enable
+# UA2F 防检测引擎 + 出站 TTL 固定（开机自启）
+[ -x /etc/init.d/ua2f ] && /etc/init.d/ua2f enable
+[ -x /etc/init.d/ua2f-ttl ] && /etc/init.d/ua2f-ttl enable
+if [ -x /etc/init.d/netcheck ] && grep -q '^USERNAME=.' /etc/auth.conf 2>/dev/null; then
+	/etc/init.d/netcheck enable
+fi
+
+# ---------------------------------------------------------------
+# 7. 提交配置
+# ---------------------------------------------------------------
+uci commit system
+uci commit network
+uci commit dhcp
+uci commit luci
+
+# UA2F 防引擎 + 出口 TTL 固定（开机自启）
+[ -x /etc/init.d/ua2f ] && /etc/init.d/ua2f enable
+[ -x /etc/init.d/ua2f-ttl ] && /etc/init.d/ua2f-ttl enable
+
+exit 0

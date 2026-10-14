@@ -1,0 +1,37 @@
+#!/bin/sh
+# =====================================================================
+#  首次开机：把 Argon 主题 + 中文界面钉死（by au学长 V：aauuo0）
+#  这两个东西现在是直接放进固件的（不是靠 opkg 装），所以只要文件在，
+#  这一脚本就能保证主题和语言被正确选上。
+# =====================================================================
+
+# ---------- 主题 ----------
+if [ -d /www/luci-static/argon ]; then
+	uci -q set luci.themes.Argon='/luci-static/argon'
+	uci -q set luci.main.mediaurlbase='/luci-static/argon'
+fi
+
+# ---------- 语言 ----------
+# 24.10 的 dispatcher 会把下划线换成横线再去找 /usr/lib/lua/luci/i18n/*.lmo，
+# 所以 luci.main.lang 用哪种写法都认，前提是对应的 .lmo 真的在。
+for c in zh-cn zh_Hans zh_cn; do
+	if ls /usr/lib/lua/luci/i18n/*."$c".lmo >/dev/null 2>&1; then
+		uci -q set luci.main.lang="$c"
+		case "$c" in
+			zh-cn) uci -q set luci.languages.zh_cn='简体中文 (Simplified Chinese)' ;;
+			*)     uci -q set "luci.languages.$c"='简体中文' ;;
+		esac
+		break
+	fi
+done
+
+# ---------- 主题默认外观（按你截图里的设置固化） ----------
+uci -q set argon.@global[0].login_style='centered'      # 登录页：居中卡片
+uci -q set argon.@global[0].online_wallpaper='bing'     # 壁纸：必应每日图
+uci -q set argon.@global[0].mode='dark'                 # 主题：暗色
+uci -q set argon.@global[0].primary='#5e72e4'
+uci -q set argon.@global[0].dark_primary='#483d8b'
+
+uci -q commit luci
+uci -q commit argon 2>/dev/null
+exit 0

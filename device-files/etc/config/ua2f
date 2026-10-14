@@ -1,0 +1,17 @@
+config ua2f 'enabled'
+	option enabled '1'
+
+config ua2f 'firewall'
+	option handle_fw '1'
+	option handle_tls '0'
+	option handle_intranet '0'
+	option handle_mmtls '0'
+
+config ua2f 'main'
+	option mode 'NFQUEUE'
+	option listen_port '10010'
+	option nfqueue_workers '1'
+	option persona 'windows'
+	option custom_ua 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+	option fix_ttl '1'
+	option disable_connmark '0'

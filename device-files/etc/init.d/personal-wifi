@@ -1,0 +1,85 @@
+#!/bin/sh /etc/rc.common
+# =====================================================================
+#  私人固件 —— 自动开无线并设置 SSID / 密码
+#  因为无线配置文件是开机后才生成的，所以放在这里做（比 uci-defaults 更稳）。
+#  每次开机都会跑一次：无线接口被误删（例如在 LuCI 里点了 Remove）会自动重建，
+#  配置没变时不会写 flash。
+#  想改 WiFi 名字和密码，改下面这四行。
+#
+#  多机型说明：radio0 用 2.4G 的名字，其余射频（radio1/2/3）都用 5G 的名字，
+#  所以双频、三频机型都能自动配好。
+# =====================================================================
+
+START=95
+STOP=10
+
+SSID_24G='破解校园网V：aauuo0'
+SSID_5G='破解校园网联系v：aauuo0'
+WIFI_KEY='aaaauuuu'
+WIFI_COUNTRY='CN'
+# 2.4G 信道：1 / 6 / 11 三选一。宿舍楼里通常 6 或 13 最干净，
+# 换信道前可以用手机的 WiFi 分析仪看一下哪个占用最少。
+CH_24G='6'
+# 5G 信道：149~165 是非 DFS 段（最稳，不会因雷达检测掉线）；
+# 36~48 也可以；52~64 是 DFS/雷达段，会偶发掉线，不推荐。
+CH_5G='149'
+
+start() {
+	# 首次启动时 /etc/config/wireless 可能还没生成，先生成一份
+	[ -f /etc/config/wireless ] || wifi config >/dev/null 2>&1
+	[ -f /etc/config/wireless ] || exit 0
+
+	changed=0
+	i=0
+	while [ "$i" -le 3 ]; do
+		if uci -q get "wireless.radio$i" >/dev/null; then
+			if [ "$i" = "0" ]; then
+				ssid="$SSID_24G"
+				band_htmode='HT20'
+				band_channel="$CH_24G"
+			else
+				ssid="$SSID_5G"
+				band_htmode='VHT80'
+				band_channel="$CH_5G"
+			fi
+
+			[ "$(uci -q get "wireless.radio$i".disabled)" = "0" ] || { uci set "wireless.radio$i".disabled='0'; changed=1; }
+			[ "$(uci -q get "wireless.radio$i".country)" = "$WIFI_COUNTRY" ] || { uci set "wireless.radio$i".country="$WIFI_COUNTRY"; changed=1; }
+			# 带宽：2.4G 用 HT20（20MHz，抗干扰，比 HT40 更稳）；5G 用 VHT80（速度快）
+			[ "$(uci -q get "wireless.radio$i".htmode)" = "$band_htmode" ] || { uci set "wireless.radio$i".htmode="$band_htmode"; changed=1; }
+			# 固定信道（比 auto 更稳，避免每次开机换信道导致设备重连）
+			[ "$(uci -q get "wireless.radio$i".channel)" = "$band_channel" ] || { uci set "wireless.radio$i".channel="$band_channel"; changed=1; }
+			# 关掉 802.11b/g 老速率，减少低速设备拖慢整个网络
+			[ "$(uci -q get "wireless.radio$i".legacy_rates)" = "0" ] || { uci set "wireless.radio$i".legacy_rates='0'; changed=1; }
+
+			# 无线接口被删过（LuCI 里的红色 Remove）就重建一个
+			if ! uci -q get "wireless.default_radio$i" >/dev/null; then
+				uci set "wireless.default_radio$i=wifi-iface"
+				uci set "wireless.default_radio$i".device="radio$i"
+				uci set "wireless.default_radio$i".network='lan'
+				uci set "wireless.default_radio$i".mode='ap'
+				changed=1
+			fi
+
+			[ "$(uci -q get "wireless.default_radio$i".disabled)" = "0" ] || { uci set "wireless.default_radio$i".disabled='0'; changed=1; }
+			[ "$(uci -q get "wireless.default_radio$i".ssid)" = "$ssid" ] || { uci set "wireless.default_radio$i".ssid="$ssid"; changed=1; }
+			[ "$(uci -q get "wireless.default_radio$i".encryption)" = "psk2+ccmp" ] || { uci set "wireless.default_radio$i".encryption='psk2+ccmp'; changed=1; }
+			[ "$(uci -q get "wireless.default_radio$i".key)" = "$WIFI_KEY" ] || { uci set "wireless.default_radio$i".key="$WIFI_KEY"; changed=1; }
+		fi
+		i=$((i + 1))
+	done
+
+	# 双频共用一颗芯片的机型（例如 MT7615DN 的 MSG1500）：两个 radio 的 path 相同，
+	# 必须加 serialize=1，否则 5G 可能起不来。独立两芯片的机型（如 AC2100）不受影响。
+	p0="$(uci -q get wireless.radio0.path)"
+	p1="$(uci -q get wireless.radio1.path)"
+	if [ -n "$p0" ] && [ "$p0" = "$p1" ]; then
+		[ "$(uci -q get wireless.radio0.serialize)" = "1" ] || { uci set wireless.radio0.serialize='1'; changed=1; }
+		[ "$(uci -q get wireless.radio1.serialize)" = "1" ] || { uci set wireless.radio1.serialize='1'; changed=1; }
+	fi
+
+	[ "$changed" = "1" ] || exit 0
+
+	uci commit wireless
+	wifi reload >/dev/null 2>&1
+}
