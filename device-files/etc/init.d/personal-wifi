@@ -1,6 +1,4 @@
 #!/bin/sh /etc/rc.common
-# 只在首次开机应用一次；以后重启不再动 WiFi（想重新强制应用：rm -f /etc/.personal-wifi-applied 再 enable）
-[ -f /etc/.personal-wifi-applied ] && exit 0
 # =====================================================================
 #  私人固件 —— 自动开无线并设置 SSID / 密码
 #  因为无线配置文件是开机后才生成的，所以放在这里做（比 uci-defaults 更稳）。
@@ -30,6 +28,21 @@ start() {
 	# 首次启动时 /etc/config/wireless 可能还没生成，先生成一份
 	[ -f /etc/config/wireless ] || wifi config >/dev/null 2>&1
 	[ -f /etc/config/wireless ] || exit 0
+	# 正常重启：不动任何无线设置；只有配置被误删（接口/SSID 缺失）才重建默认值
+	MISSING=0
+	for i in 0 1; do
+		[ -n "$(uci -q get wireless.default_radio$i.ssid)" ] || MISSING=1
+		[ -n "$(uci -q get wireless.default_radio$i.key)" ]  || MISSING=1
+	done
+	if [ "$MISSING" = "0" ]; then
+		ch=0
+		for i in 0 1; do
+			[ "$(uci -q get wireless.radio$i.disabled)" = "0" ] || { uci set wireless.radio$i.disabled='0'; ch=1; }
+			[ "$(uci -q get wireless.default_radio$i.disabled)" = "0" ] || { uci set wireless.default_radio$i.disabled='0'; ch=1; }
+		done
+		[ "$ch" = "1" ] && { uci commit wireless; wifi up >/dev/null 2>&1; }
+		exit 0
+	fi
 
 	changed=0
 	i=0
@@ -85,5 +98,3 @@ start() {
 	uci commit wireless
 	wifi reload >/dev/null 2>&1
 }
-
-touch /etc/.personal-wifi-applied 2>/dev/null
