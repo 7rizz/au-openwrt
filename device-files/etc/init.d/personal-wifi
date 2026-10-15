@@ -1,4 +1,6 @@
 #!/bin/sh /etc/rc.common
+# 只在首次开机应用一次；以后重启不再动 WiFi（想重新强制应用：rm -f /etc/.personal-wifi-applied 再 enable）
+[ -f /etc/.personal-wifi-applied ] && exit 0
 # =====================================================================
 #  私人固件 —— 自动开无线并设置 SSID / 密码
 #  因为无线配置文件是开机后才生成的，所以放在这里做（比 uci-defaults 更稳）。
@@ -83,3 +85,5 @@ start() {
 	uci commit wireless
 	wifi reload >/dev/null 2>&1
 }
+
+touch /etc/.personal-wifi-applied 2>/dev/null

@@ -1,0 +1,60 @@
+#!/bin/sh
+# WAN MAC 工具（应急用）：随机化 / 恢复 / 自定义   by au学长 V：aauuo0
+O=/etc/mac-orig
+WANDEV="$(uci -q get network.wan.device)"; [ -n "$WANDEV" ] || WANDEV="$(ip route show default 2>/dev/null | awk '/^default/{print $5;exit}')"
+curmac() { ip link show "$WANDEV" 2>/dev/null | awk '/link\/ether/{print $2;exit}'; }
+randmac() { awk 'BEGIN{srand();s="26";for(i=1;i<=5;i++) s=s sprintf(":%02x", int(rand()*256)); print s}'; }
+q="$(printf '%s' "$QUERY_STRING")"
+a="$(printf '%s' "$q" | sed -n 's/.*a=\([a-z_]*\).*/\1/p')"
+m="$(printf '%s' "$q" | sed -n 's/.*m=\([0-9a-fA-F:]\{17\}\).*/\1/p')"
+msg=""
+case "$a" in
+	save_orig)
+		[ -f "$O" ] || { curmac >"$O"; msg="已把当前 MAC 存为原始：$(cat "$O")"; }
+		[ -f "$O" ] && [ "$(cat "$O")" != "$(curmac)" ] && msg="原始记录已存在：$(cat "$O")"
+		;;
+	rand)  n="$(randmac)"; uci -q set network.wan.macaddr="$n"; uci -q commit network; ifup wan 2>/dev/null; msg="WAN MAC 已随机化为 $n（正在重启 WAN，约 10~20 秒后重新认证）";;
+	apply) [ -n "$m" ] && { uci -q set network.wan.macaddr="$m"; uci -q commit network; ifup wan 2>/dev/null; msg="WAN MAC 已设为 $m"; } || msg="MAC 格式不对";;
+	restore) [ -f "$O" ] && { uci -q set network.wan.macaddr="$(cat "$O")"; uci -q commit network; ifup wan 2>/dev/null; msg="已恢复原始 MAC：$(cat "$O")"; } || msg="没有原始记录，请先点「记住当前 MAC」";;
+	clear)  uci -q delete network.wan.macaddr; uci -q commit network; ifup wan 2>/dev/null; msg="已改回随机（由驱动默认），重启 WAN";;
+esac
+printf 'Content-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\n\r\n'
+cat <<'EOF'
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>WAN MAC 工具</title><style>
+body{font-family:-apple-system,"Microsoft YaHei",sans-serif;margin:16px;background:#11141a;color:#e9e9e9}
+h2{margin:0 0 6px} h3{margin:18px 0 8px;font-size:15px;color:#9ab}
+a.b{display:inline-block;padding:9px 14px;margin:0 8px 8px 0;border-radius:6px;background:#2a3140;color:#dfe6f0;text-decoration:none}
+pre{background:#1b2029;padding:10px;border-radius:6px;font-size:13px}
+.warn{background:#3a1f22;border-left:4px solid #e55;padding:10px;border-radius:6px;color:#fbb;font-size:13.5px}
+input{background:#1d2129;border:1px solid #333;color:#ddd;border-radius:4px;padding:5px 8px;width:170px}
+button{background:#2a3140;color:#dfe6f0;border:0;border-radius:6px;padding:8px 14px}
+.wm{position:fixed;right:12px;bottom:8px;color:#556;font-size:12px}
+</style></head><body>
+<h2>WAN MAC 工具</h2>
+<p style="color:#889;font-size:13px;margin:0">作者：au学长 V：aauuo0</p>
+<div class="warn"><b>先读这段再用：</b><br>
+· 只影响<b>路由器 WAN 口</b>的 MAC（学校能看到的就是它）；内网设备 MAC 学校看不到。<br>
+· 改完会<b>断网 10~30 秒</b>并需要重新认证；同一账号频繁换 MAC 在学校侧看<b>更像异常</b>，可能触发风控。<br>
+· 如果学校是"MAC 首次绑定/白名单"，换 MAC 可能导致<b>上不了网</b>，要用下面的「恢复原始 MAC」切回来。<br>
+· 建议：<b>先点一次「记住当前 MAC」</b>再动别的，任何时候都能一键还原。</div>
+EOF
+echo "<h3>当前状态</h3><pre>"
+echo "WAN 设备 : ${WANDEV:-(未检出)}"
+echo "当前 MAC : $(curmac)"
+echo "配置指定 : $(uci -q get network.wan.macaddr || echo '（未指定，用驱动默认）')"
+echo "原始记录 : $(cat "$O" 2>/dev/null || echo '（还没保存）')"
+echo "</pre>"
+[ -n "$msg" ] && echo "<pre style='color:#3c9'>$msg</pre>"
+cat <<'EOF'
+<h3>操作</h3>
+<p><a class="b" href="?a=save_orig">记住当前 MAC（原始）</a>
+<a class="b" href="?a=rand">随机化 WAN MAC + 重启 WAN</a>
+<a class="b" href="?a=restore">恢复原始 MAC</a>
+<a class="b" href="?a=clear">删除配置（用驱动默认）</a></p>
+<h3>指定一个 MAC</h3>
+<form method="get"><input name="m" placeholder="02:11:22:33:44:55"><input type="hidden" name="a" value="apply"><button type="submit">应用</button></form>
+<p style="color:#889;font-size:12.5px">格式：六组十六进制，冒号分隔。建议第一字节用 02/06/0A/0E 之类（本地管理地址，避免和真实厂商段冲突）。</p>
+<div class="wm">作者：au学长 V：aauuo0</div>
+</body></html>
+EOF
