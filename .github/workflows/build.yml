@@ -125,29 +125,26 @@ jobs:
           printf '%s' "$HASH" > openwrt/files/etc/rootpw.hash
           echo "已生成 root 密码哈希（密码本身不写进固件，只写哈希）"
 
-      - name: 7. 注入自定义文件（首次开机设置、无线、UA2F、校园网登录）
+      - name: 7. 注入自定义文件（首次开机设置、无线、UA3F、校园网登录）
         env:
           VARIANT: ${{ github.event.inputs.variant || 'full' }}
         run: |
           mkdir -p openwrt/files
           cp -a device-files/. openwrt/files/
-          # 兜底：仓库里可能还留着历史推送的 UA3F / UA 防检测中心 文件（上传只会覆盖、不会删旧文件）
-          rm -rf openwrt/files/usr/bin/ua3f openwrt/files/etc/init.d/ua3f openwrt/files/etc/config/ua3f \
-                 openwrt/files/etc/uci-defaults/luci-ua3f \
-                 openwrt/files/usr/lib/lua/luci/controller/ua3f.lua \
-                 openwrt/files/usr/lib/lua/luci/model/cbi/ua3f.lua \
-                 openwrt/files/usr/lib/lua/luci/model/cbi/ua3f \
-                 openwrt/files/usr/lib/lua/luci/view/ua3f \
-                 openwrt/files/usr/lib/lua/luci/i18n/ua3f.zh-cn.lmo \
-                 openwrt/files/www/luci-static/resources/ua3f \
-                 openwrt/files/usr/sbin/ua-detect-ctl openwrt/files/usr/libexec/uadetect-web \
-                 openwrt/files/etc/init.d/uadetect openwrt/files/etc/config/uadetect \
+          # 兜底：仓库里可能还留着历史推送的「UA 防检测中心」(uadetect) 文件
+          # （GitHub 网页上传只会覆盖、不会删旧文件，留着会和 UA3F 页面抢菜单）
+          # 注意：UA3F 本体这次是要进固件的，下面这些路径**不要**再删。
+          rm -rf openwrt/files/usr/sbin/ua-detect-ctl \
+                 openwrt/files/usr/libexec/uadetect-web \
+                 openwrt/files/etc/init.d/uadetect \
+                 openwrt/files/etc/config/uadetect \
                  openwrt/files/usr/lib/lua/luci/controller/uadetect.lua \
                  openwrt/files/usr/lib/lua/luci/view/uadetect \
                  openwrt/files/usr/share/luci/menu.d/luci-app-uadetect.json \
                  openwrt/files/usr/share/rpcd/acl.d/luci-app-uadetect.json \
                  openwrt/files/www/luci-static/resources/view/uadetect.js
-          # 固件自带 UA2F（跑在 NFQUEUE 上，开销小）；UA3F 已从固件移除，需要时再装离线包
+          # 防检测引擎：UA3F 3.7.0（主，TPROXY:1080）+ UA2F 4.10.2（备，默认关闭）
+          # 判断镜像里到底进了哪个，见第 10 步的自检
           # 恢复可执行权限（二进制和脚本必须能执行）
           find openwrt/files -type d -exec chmod 0755 {} +
           find openwrt/files -type f -exec chmod 0644 {} +
@@ -234,12 +231,25 @@ jobs:
           ls "$ROOTDIR"/usr/lib/lua/luci/i18n/*.zh-cn.lmo >/dev/null 2>&1 || {
             echo "!! 镜像里没有中文语言包(*.zh-cn.lmo)"; exit 1; }
           [ -f "$ROOTDIR/etc/uci-defaults/99-argon-lang" ] || { echo "!! 镜像里没有 99-argon-lang（主题和语言不会被设置）"; exit 1; }
-          [ -f "$ROOTDIR/usr/bin/ua2f" ] || echo "提示：镜像里没有 ua2f 二进制"
+          # ---- UA3F 主引擎必须在镜像里（缺了整套防检测就是空的，直接中止）----
+          for f in usr/bin/ua3f etc/init.d/ua3f etc/config/ua3f usr/sbin/ua-engine \
+                   usr/lib/lua/luci/controller/ua3f.lua usr/lib/lua/luci/model/cbi/ua3f.lua \
+                   usr/lib/lua/luci/i18n/ua3f.zh-cn.lmo www/luci-static/resources/ua3f/rule.js; do
+            [ -f "$ROOTDIR/$f" ] || { echo "!! 镜像里缺 UA3F 组件: $f"; exit 1; }
+          done
+          echo "UA3F 二进制大小：$(du -h "$ROOTDIR/usr/bin/ua3f" | cut -f1)"
+          grep -q "option enabled '1'" "$ROOTDIR/etc/config/ua3f" || {
+            echo "!! UA3F 配置不是默认开启状态"; exit 1; }
+          if [ -f "$ROOTDIR/usr/bin/ua2f" ]; then
+            echo "UA2F 备引擎也在镜像里（默认关闭，用 ua-engine ua2f 切过去）"
+          else
+            echo "提示：镜像里没有 ua2f 二进制"
+          fi
           [ -f "$ROOTDIR/www/cgi-bin/ua2f" ] || echo "提示：镜像里没有 UA2F 网页"
           [ -f "$ROOTDIR/usr/libexec/portal-probe" ] || echo "提示：镜像里没有 portal-probe（认证门户探测）"
           [ -f "$ROOTDIR/etc/uci-defaults/99-personal" ] || echo "提示：99-personal 没进镜像，自定义主机名/无线/后台地址会不生效"
           [ -f "$ROOTDIR/usr/lib/lua/luci/i18n/base.zh-cn.lmo" ] || { echo "!! 缺 base.zh-cn.lmo，中文界面会退回英文"; exit 1; }
-          echo "镜像自检通过：Argon 主题 + 中文界面 + 认证门户探测都在镜像里。"
+          echo "镜像自检通过：UA3F 防检测 + Argon 主题 + 中文界面 + 认证门户探测都在镜像里。"
 
       - name: 11. 整理产物
         run: |
