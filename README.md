@@ -8,7 +8,7 @@
 
 | 版本 | `profile` 填 | 里面有什么 | 适合 |
 | --- | --- | --- | --- |
-| **校园网防检测版**（默认） | `campus` | 内置 UA3F + UA2F + 你自己的「UA 防检测中心」「顺枫公寓自动登录」+ 中文界面 + 排错工具 | 就是要解决校园网共享检测、老掉线 |
+| **校园网防检测版**（默认） | `campus` | 内置 **UA3F 3.7.0**（主引擎，TPROXY）+ UA2F 4.10.2（备用，默认关）+「顺枫公寓自动登录」+ 认证门户探测 + 中文界面 + 排错工具 | 就是要解决校园网共享检测、老掉线 |
 | 全能版 | `full` | 在校园网版基础上，再加 OpenClash / PassWall / SSR-Plus / AdGuard Home / 多拨 / 限速等 | 家里自用，还要科学上网和去广告 |
 
 校园网那一套的完整用法（人格选择、验证、排错、回滚）见 👉 [docs/校园网防检测.md](docs/校园网防检测.md)
@@ -46,13 +46,16 @@
    > 注意：`firmware/` 目录里是我帮你下载好的官方原版底包，**不用上传**，那是刷机时用的。
    > `vendor/` 目录里是 UA3F/UA2F 的官方安装包（留个底，方便你以后手动装），也不用上传。
    > 拖的时候如果看不到 `.github` 文件夹，在文件资源管理器里打开"显示隐藏项目"即可（它不是隐藏文件，正常情况下能直接看到）。
+   > ⚠️ `device-files/` 现在有 **129 个文件 / 19MB**（含 16.8MB 的 UA3F 二进制）。GitHub 网页一次最多传 100 个文件，
+   > 最稳的传法是**分两批**：第一批传 `device-files` 里除 `usr/bin/ua3f` 的部分，第二批单独传 `usr/bin/ua3f`（单文件 25MB 以内，能传）。
+   > 或者干脆用 GitHub Desktop / `git push`，一次推完。
 
 4. 传完后进 **Actions** 页面 → 左侧点「编译红米AC2100固件」→ 右边 **Run workflow**，两个参数：
 
    | 参数 | 填什么 |
    | --- | --- |
    | `profile` | `campus` ＝ 校园网防检测版（推荐）／`full` ＝ 全能版 |
-   | `variant` | `full` ＝ 完整版（含 UA3F，需要 ≥32MB 闪存）／`lite` ＝ 精简版（去掉 UA3F 只留 UA2F，给 16MB 及以下的老机器） |
+   | `variant` | 现在只有 `full` 生效（工作流里还没做 lite 分支，填 `lite` 不会变小） |
    | `device` | 机型代号，默认 `xiaomi_redmi-router-ac2100`；换别的机器看 [configs/devices.list](configs/devices.list) 第一列（每行的最后一列写了该机型的最大固件体积，一眼看出装不装得下 UA3F） |
 
    填完点绿色按钮。
@@ -64,6 +67,9 @@
 
 ## 三、固件里装了什么
 
+**校园网防检测**：**UA3F 3.7.0**（主引擎，TPROXY :1080，改 UA + 固定 TTL + 清 TCP 时间戳 + IPID 归零，页面在「服务 → UA3F」）；UA2F 4.10.2（备引擎，默认关闭，`ua-engine ua2f` 可切换，两者互斥）
+**自己写的四个页面**（都在「服务」菜单）：UA3F 防检测、连接设备、网络波动监测、WAN MAC 工具
+**自动登录 / 探测**：顺枫公寓自动登录（netcheck）、认证门户探测（portal-probe）
 **科学上网（三种任选，默认都不自动启动）**：OpenClash、PassWall、SSR-Plus
 **DNS / 去广告**：AdGuard Home
 **网络增强**：mwan3 多拨、SQM 限速、UPnP、DDNS、流量统计（nlbwmon）、网络唤醒、定时重启
@@ -84,6 +90,10 @@
 | WiFi 名字 / WiFi 密码 | `device-files/etc/init.d/personal-wifi` | 文件开头的 4 个变量 |
 | 加/删插件 | `configs/ac2100.seed` | 注释掉某行 = 删掉该插件；去掉 `#` = 加上 |
 | OpenWrt 版本 | `.github/workflows/build.yml` | `default: "v24.10.8"` |
+| **UA3F 人格 UA / TTL** | `device-files/etc/config/ua3f` | `option ua`（换 UA）、`option l3_rewrite_ttl_value`（64=手机，128=Windows） |
+| **换 UA3F 的规则 / 模式** | 路由器上「服务 → UA3F」 | 改完点「保存并应用」，命令行等价 `uci commit ua3f && /etc/init.d/ua3f restart` |
+| **切 UA3F ↔ UA2F ↔ 全关** | 路由器上执行 | `ua-engine ua3f` / `ua-engine ua2f` / `ua-engine off`（`ua-engine` 只看状态） |
+| **网速慢（UA3F 老毛病）** | 路由器上执行 | `ua-engine fast` ＝ 只固定 TTL（默认档）／`ua-engine stealth` ＝ 再加 IPID + TCP 时间戳（更隐蔽，但 MIPS32 上会明显掉速） |
 
 改完在 GitHub 网页上重新上传该文件（或 `git push`），Actions 会自动重新编译。
 
