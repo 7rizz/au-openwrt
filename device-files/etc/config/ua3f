@@ -1,0 +1,46 @@
+# =====================================================================
+#  UA3F 3.7.0 配置（校园网防检测用）
+#  由官方包默认配置改出：只改了「默认开启 + 人格 UA + L3 重写」三项
+#  页面：LuCI「服务 → UA3F」；命令行：/etc/init.d/ua3f restart
+#  和 UA2F 二选一，用 ua-engine ua3f|ua2f|off 切换
+# =====================================================================
+
+config 'ua3f' 'enabled'
+	option enabled '1'
+
+config 'ua3f' 'main'
+	# 透明代理模式：TPROXY（保留原始目的地址，最适合网关）
+	option server_mode 'TPROXY'
+	option port '1080'
+	option bind '0.0.0.0'
+	# RULE = 按下面的 header_rewrite 规则改；GLOBAL = 全改
+	option rewrite_mode 'RULE'
+	# 人格 UA（iPhone）：和 TTL=64 配套。换人格见 docs/校园网防检测.md
+	option ua 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+	option ua_regex ''
+	option partial_replace '0'
+	option log_level 'WARN'
+	option log_lines '1000'
+	option header_rewrite '[{"enabled":true,"type":"DOMAIN-SUFFIX","match_value":"ua-check.stagoh.com","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"},{"enabled":false,"type":"DEST-PORT","match_value":"443","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"MicroMessenger Client","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"Bilibili Freedoooooom/MarkII","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"Valve/Steam HTTP Client 1.0","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"Mac","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"},{"enabled":true,"type":"HEADER-REGEX","match_header":"User-Agent","match_value":"(Apple|iPhone|iPad|Macintosh|Mac OS X|Mac|Darwin|Microsoft|Windows|Linux|Android|OpenHarmony|HUAWEI|OPPO|Vivo|XiaoMi|Mobile|Dalvik)","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"},{"enabled":true,"type":"FINAL","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1","description":"Default Fallback Rule"}]'
+
+	# ---- L3 重写：把同一账号下多台设备的网络层特征抹平 ----
+	# 速度档（默认）：只开 TTL。TTL 是 nft 规则在核心里改，不进用户态，几乎不花钱。
+	# 关掉的两项说明（这是 UA3F 拖慢网速的根因，别乱开）：
+	#   l3_rewrite_tcpts / l3_rewrite_ipid 要改包头内容，UA3F 只能把包丢给 NFQUEUE
+	#   搬到用户态改完再送回去（每个包一次内核↔用户态拷贝）。
+	#   官方文档实测：NFQUEUE 路径 CPU 44.9%，eBPF 路径 7.9%；
+	#   而 eBPF 加速要求内核 ≥5.15 且明确不支持 MIPS32 —— AC2100 是 MT7621(MIPS32)，用不了。
+	#   所以这两项在 AC2100 上开着的代价就是：整机吞吐掉一大截、CPU 打满。
+	#   想要最高隐蔽度就 `ua-engine stealth`（会开这两项），想快就保持下面这样。
+	option l3_rewrite_ttl '1'
+	option l3_rewrite_ttl_value '64'
+	option l3_rewrite_tcpts '0'
+	option l3_rewrite_ipid '0'
+	option l3_rewrite_tcpwin '0'
+	option l3_rewrite_block_quic '0'
+	option l3_rewrite_bpf_offload '0'
+
+	# ---- 重武器默认关（MT7621 上开了容易掉线）----
+	option desync_reorder '0'
+	option desync_inject '0'
+	option mitm_enabled '0'

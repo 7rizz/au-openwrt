@@ -1,5 +1,10 @@
+# =====================================================================
+#  UA2F（备用引擎）—— 默认关闭，用 ua-engine ua2f 才会启动
+#  人格和 UA3F 保持一致（iPhone / TTL 64），切换引擎时特征不变
+# =====================================================================
+
 config ua2f 'enabled'
-	option enabled '1'
+	option enabled '0'
 
 config ua2f 'firewall'
 	option handle_fw '1'
@@ -11,7 +16,7 @@ config ua2f 'main'
 	option mode 'NFQUEUE'
 	option listen_port '10010'
 	option nfqueue_workers '1'
-	option persona 'windows'
-	option custom_ua 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+	option persona 'iphone'
+	option custom_ua 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
 	option fix_ttl '1'
 	option disable_connmark '0'
