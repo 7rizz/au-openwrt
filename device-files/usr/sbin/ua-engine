@@ -1,0 +1,108 @@
+#!/bin/sh
+# =====================================================================
+#  UA 引擎开关（UA3F / UA2F 互斥 + 速度/隐蔽度档位）   by au学长 V：aauuo0
+#
+#  两个引擎都会抢同一份出站流量，同时开必然互相打架（UA 改两遍、
+#  规则互相覆盖），所以这里保证同一时刻只有一个在跑。
+#
+#    ua-engine                看状态（含当前档位）
+#    ua-engine ua3f           切到 UA3F（TPROXY :1080，默认就是这个）
+#    ua-engine ua2f           切到 UA2F（NFQUEUE :10010）
+#    ua-engine off            两个都停（比如排查是不是它导致上不了网）
+#
+#    ua-engine fast           UA3F 速度档：只固定 TTL（nft 内核态，不进用户态）
+#    ua-engine stealth        UA3F 隐蔽档：TTL + TCP 时间戳 + IPID 全改
+#                             （后两项在 MIPS32 上只能走 NFQUEUE，会明显掉速）
+# =====================================================================
+INIT=/etc/init.d
+
+stop_all() {
+	for e in ua3f ua2f ua2f-ttl; do
+		[ -x "$INIT/$e" ] && "$INIT/$e" stop >/dev/null 2>&1
+	done
+}
+
+running() {
+	pgrep -f "/usr/bin/$1" >/dev/null 2>&1 && echo yes || echo no
+}
+
+# 档位：fast = 只 TTL；stealth = TTL + TCPts + IPID
+preset() {
+	case "$1" in
+	fast)
+		uci -q set ua3f.main.l3_rewrite_ttl='1'
+		uci -q set ua3f.main.l3_rewrite_tcpts='0'
+		uci -q set ua3f.main.l3_rewrite_ipid='0'
+		echo "已切到速度档：只固定 TTL（nft 内核态，不启用 NFQUEUE）"
+		;;
+	stealth)
+		uci -q set ua3f.main.l3_rewrite_ttl='1'
+		uci -q set ua3f.main.l3_rewrite_tcpts='1'
+		uci -q set ua3f.main.l3_rewrite_ipid='1'
+		echo "已切到隐蔽档：TTL + TCP 时间戳 + IPID 全改（走 NFQUEUE，AC2100 上会明显掉速）"
+		;;
+	esac
+	uci -q commit ua3f
+	# 只在 UA3F 本来就启用时才重启，避免"顺手把引擎点开了"
+	if "$INIT/ua3f" enabled >/dev/null 2>&1; then
+		"$INIT/ua3f" restart >/dev/null 2>&1
+		echo "UA3F 已重启生效"
+	else
+		echo "（UA3F 当前没启用，配置已保存，下次启动生效）"
+	fi
+}
+
+case "$1" in
+ua3f)
+	stop_all
+	uci -q set ua3f.enabled.enabled='1'
+	uci -q set ua2f.enabled.enabled='0'
+	uci -q commit ua3f; uci -q commit ua2f
+	[ -x "$INIT/ua2f" ] && "$INIT/ua2f" disable >/dev/null 2>&1
+	"$INIT/ua3f" enable >/dev/null 2>&1
+	"$INIT/ua3f" start
+	echo "已切到 UA3F（TPROXY 0.0.0.0:1080）"
+	;;
+ua2f)
+	stop_all
+	uci -q set ua3f.enabled.enabled='0'
+	uci -q set ua2f.enabled.enabled='1'
+	uci -q commit ua3f; uci -q commit ua2f
+	"$INIT/ua3f" disable >/dev/null 2>&1
+	"$INIT/ua2f" enable >/dev/null 2>&1
+	"$INIT/ua2f" start
+	"$INIT/ua2f-ttl" start >/dev/null 2>&1
+	echo "已切到 UA2F（NFQUEUE :10010，只处理 HTTP，压力小得多）"
+	;;
+fast|stealth)
+	[ -x "$INIT/ua3f" ] || { echo "UA3F 没装，先 ua-engine ua3f" >&2; exit 1; }
+	preset "$1"
+	;;
+off|stop)
+	stop_all
+	uci -q set ua3f.enabled.enabled='0'
+	uci -q set ua2f.enabled.enabled='0'
+	uci -q commit ua3f; uci -q commit ua2f
+	echo "两个引擎都停了（自动登录 netcheck 不受影响）"
+	;;
+status|"")
+	echo "UA3F  进程：$(running ua3f)   配置启用：$(uci -q get ua3f.enabled.enabled)"
+	echo "UA2F  进程：$(running ua2f)   配置启用：$(uci -q get ua2f.enabled.enabled)"
+	echo "UA3F  模式：$(uci -q get ua3f.main.server_mode)  端口：$(uci -q get ua3f.main.port)"
+	echo "UA3F  档位：TTL=$(uci -q get ua3f.main.l3_rewrite_ttl)/$(uci -q get ua3f.main.l3_rewrite_ttl_value)" \
+		" TCPts=$(uci -q get ua3f.main.l3_rewrite_tcpts)" \
+		" IPID=$(uci -q get ua3f.main.l3_rewrite_ipid)"
+	if [ "$(uci -q get ua3f.main.l3_rewrite_tcpts)" = "1" ] || [ "$(uci -q get ua3f.main.l3_rewrite_ipid)" = "1" ]; then
+		echo "        ↑ 有 IPID/TCPts 在开，所有包要过 NFQUEUE（MIPS32 没有 eBPF 加速），网速会掉；要快就 ua-engine fast"
+	fi
+	echo "人格 UA：$(uci -q get ua3f.main.ua)"
+	if [ "$(running ua2f)" = "yes" ] && [ "$(running ua3f)" = "yes" ]; then
+		echo "!! 两个引擎同时在跑，必然冲突，用 ua-engine ua3f 或 ua-engine ua2f 定一个"
+	fi
+	;;
+*)
+	echo "用法: ua-engine [status|ua3f|ua2f|fast|stealth|off]" >&2
+	exit 1
+	;;
+esac
+exit 0
