@@ -23,10 +23,6 @@ on:
         description: "机型代号（默认红米AC2100；其它型号见 configs/devices.list 第 1 列）"
         required: false
         default: "xiaomi_redmi-router-ac2100"
-      variant:
-        description: "full=完整版(推荐) / lite=精简版(去掉大插件，给小闪存机器)"
-        required: false
-        default: "full"
       rootpw:
         description: "root 初始登录密码"
         required: false
@@ -126,8 +122,6 @@ jobs:
           echo "已生成 root 密码哈希（密码本身不写进固件，只写哈希）"
 
       - name: 7. 注入自定义文件（首次开机设置、无线、UA3F、校园网登录）
-        env:
-          VARIANT: ${{ github.event.inputs.variant || 'full' }}
         run: |
           mkdir -p openwrt/files
           cp -a device-files/. openwrt/files/
@@ -234,12 +228,24 @@ jobs:
           # ---- UA3F 主引擎必须在镜像里（缺了整套防检测就是空的，直接中止）----
           for f in usr/bin/ua3f etc/init.d/ua3f etc/config/ua3f usr/sbin/ua-engine \
                    usr/lib/lua/luci/controller/ua3f.lua usr/lib/lua/luci/model/cbi/ua3f.lua \
-                   usr/lib/lua/luci/i18n/ua3f.zh-cn.lmo www/luci-static/resources/ua3f/rule.js; do
+                   usr/lib/lua/luci/i18n/ua3f.zh-cn.lmo www/luci-static/resources/ua3f/rule.js \
+                   usr/libexec/ua-engine-web www/luci-static/resources/view/ua-engine.js \
+                   usr/share/luci/menu.d/luci-app-ua-engine.json \
+                   usr/share/rpcd/acl.d/luci-app-ua-engine.json; do
             [ -f "$ROOTDIR/$f" ] || { echo "!! 镜像里缺 UA3F 组件: $f"; exit 1; }
           done
           echo "UA3F 二进制大小：$(du -h "$ROOTDIR/usr/bin/ua3f" | cut -f1)"
           grep -q "option enabled '1'" "$ROOTDIR/etc/config/ua3f" || {
             echo "!! UA3F 配置不是默认开启状态"; exit 1; }
+          grep -q "option l3_rewrite_ttl_value '128'" "$ROOTDIR/etc/config/ua3f" || {
+            echo "!! UA3F 的 TTL 不是默认 128（电脑人格）"; exit 1; }
+          grep -qi "Windows NT" "$ROOTDIR/etc/config/ua3f" || {
+            echo "!! UA3F 的默认 UA 不是 Windows（跟 TTL 128 不配套）"; exit 1; }
+          # 只保留速度档：TCPts / IPID / TCPWIN 必须是 0，否则 MIPS32 上会逐包走 NFQUEUE 掉速
+          for k in l3_rewrite_tcpts l3_rewrite_ipid l3_rewrite_tcpwin; do
+            grep -q "option $k '0'" "$ROOTDIR/etc/config/ua3f" || {
+              echo "!! $k 不是 0（速度档要求全关）"; exit 1; }
+          done
           if [ -f "$ROOTDIR/usr/bin/ua2f" ]; then
             echo "UA2F 备引擎也在镜像里（默认关闭，用 ua-engine ua2f 切过去）"
           else
