@@ -1,6 +1,6 @@
 #!/bin/sh
 # =====================================================================
-#  UA 引擎开关（UA3F / UA2F 互斥 + 速度/隐蔽度档位）   by au学长 V：aauuo0
+#  UA 引擎开关（UA3F / UA2F 互斥；档位只有速度档）   by au学长 V：aauuo0
 #
 #  两个引擎都会抢同一份出站流量，同时开必然互相打架（UA 改两遍、
 #  规则互相覆盖），所以这里保证同一时刻只有一个在跑。
@@ -26,20 +26,18 @@ running() {
 	pgrep -f "/usr/bin/$1" >/dev/null 2>&1 && echo yes || echo no
 }
 
-# 档位：fast = 只 TTL；stealth = TTL + TCPts + IPID
+# 档位：只剩速度档（只 TTL）。均衡档 / 隐蔽档已下线。
 preset() {
 	case "$1" in
 	fast)
 		uci -q set ua3f.main.l3_rewrite_ttl='1'
 		uci -q set ua3f.main.l3_rewrite_tcpts='0'
 		uci -q set ua3f.main.l3_rewrite_ipid='0'
-		echo "已切到速度档：只固定 TTL（nft 内核态，不启用 NFQUEUE）"
+		uci -q set ua3f.main.l3_rewrite_tcpwin='0'
+		echo "已恢复速度档：只固定 TTL（nft 内核态，不启用 NFQUEUE）"
 		;;
-	stealth)
-		uci -q set ua3f.main.l3_rewrite_ttl='1'
-		uci -q set ua3f.main.l3_rewrite_tcpts='1'
-		uci -q set ua3f.main.l3_rewrite_ipid='1'
-		echo "已切到隐蔽档：TTL + TCP 时间戳 + IPID 全改（走 NFQUEUE，AC2100 上会明显掉速）"
+	*)
+		echo "只保留速度档：$1 已下线，用 ua-engine fast 复位"
 		;;
 	esac
 	uci -q commit ua3f
@@ -74,9 +72,14 @@ ua2f)
 	"$INIT/ua2f-ttl" start >/dev/null 2>&1
 	echo "已切到 UA2F（NFQUEUE :10010，只处理 HTTP，压力小得多）"
 	;;
-fast|stealth)
+fast)
 	[ -x "$INIT/ua3f" ] || { echo "UA3F 没装，先 ua-engine ua3f" >&2; exit 1; }
 	preset "$1"
+	;;
+persona)
+	# 换认证人格：UA + TTL 成套换，UA3F（含规则里的改写值）和 UA2F 同时同步
+	[ -x /usr/libexec/ua-engine-web ] || { echo "缺少 /usr/libexec/ua-engine-web" >&2; exit 1; }
+	/usr/libexec/ua-engine-web persona "$2" | sed -n 's/^msg=//p'
 	;;
 off|stop)
 	stop_all
@@ -101,7 +104,7 @@ status|"")
 	fi
 	;;
 *)
-	echo "用法: ua-engine [status|ua3f|ua2f|fast|stealth|off]" >&2
+	echo "用法: ua-engine [status|ua3f|ua2f|fast|off|persona windows|iphone|android|mac]" >&2
 	exit 1
 	;;
 esac

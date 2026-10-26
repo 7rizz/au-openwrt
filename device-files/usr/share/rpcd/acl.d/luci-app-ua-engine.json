@@ -1,0 +1,10 @@
+{
+	"luci-app-ua-engine": {
+		"description": "Grant access to the UA engine control helper (start/stop UA3F & UA2F)",
+		"read": {
+			"file": {
+				"/usr/libexec/ua-engine-web": [ "exec" ]
+			}
+		}
+	}
+}

@@ -1,0 +1,259 @@
+#!/bin/sh
+# =====================================================================
+#  /usr/libexec/ua-engine-web   ——「防检测引擎」页面的后端助手
+#  by au学长 V：aauuo0
+#
+#  固定动作（网页拿不到 shell）：
+#      status                          输出 key=value 状态
+#      start  ua3f|ua2f                启动（会先停掉另一个）
+#      stop   ua3f|ua2f|all            停止
+#      mode   fast                     UA3F 只有速度档（只 TTL），这个动作是把它复位
+#      persona windows|iphone|android|mac
+#                                      换认证人格：UA + TTL 一起换，
+#                                      UA3F（含规则里的改写值）和 UA2F 同时同步
+#
+#  互斥保证：任何 start 都会先 stop + disable 另一个，并用锁串行化。
+# =====================================================================
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+INIT=/etc/init.d
+LOCK=/tmp/ua-engine-web.lock
+
+UA_WINDOWS='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+UA_IPHONE='Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+UA_ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36'
+UA_MAC='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
+
+running() { pgrep -f "/usr/bin/$1" >/dev/null 2>&1 && echo 1 || echo 0; }
+enabled() { [ -x "$INIT/$1" ] && "$INIT/$1" enabled >/dev/null 2>&1 && echo 1 || echo 0; }
+cfg()     { uci -q get "$1" 2>/dev/null; }
+
+detect_persona() {
+	local ua
+	ua="$(cfg ua3f.main.ua)"
+	if   [ "$ua" = "$UA_WINDOWS" ]; then echo windows
+	elif [ "$ua" = "$UA_IPHONE"  ]; then echo iphone
+	elif [ "$ua" = "$UA_ANDROID" ]; then echo android
+	elif [ "$ua" = "$UA_MAC"     ]; then echo mac
+	else echo custom
+	fi
+}
+
+status() {
+	local r3 r2
+	r3="$(running ua3f)"
+	r2="$(running ua2f)"
+
+	echo "ua3f_running=$r3"
+	echo "ua3f_enabled=$(enabled ua3f)"
+	echo "ua3f_mode=$(cfg ua3f.main.server_mode)"
+	echo "ua3f_port=$(cfg ua3f.main.port)"
+	echo "ua3f_ua=$(cfg ua3f.main.ua)"
+	echo "ua3f_persona=$(detect_persona)"
+	echo "ua3f_ttl_on=$(cfg ua3f.main.l3_rewrite_ttl)"
+	echo "ua3f_ttl=$(cfg ua3f.main.l3_rewrite_ttl_value)"
+	echo "ua3f_tcpts=$(cfg ua3f.main.l3_rewrite_tcpts)"
+	echo "ua3f_ipid=$(cfg ua3f.main.l3_rewrite_ipid)"
+
+	echo "ua2f_running=$r2"
+	echo "ua2f_enabled=$(enabled ua2f)"
+	echo "ua2f_mode=$(cfg ua2f.main.mode)"
+	echo "ua2f_port=$(cfg ua2f.main.listen_port)"
+	echo "ua2f_persona=$(cfg ua2f.main.persona)"
+	echo "ua2f_ua=$(cfg ua2f.main.custom_ua)"
+
+	if [ "$r3" = "1" ] && [ "$r2" = "1" ]; then echo "conflict=1"; else echo "conflict=0"; fi
+	echo "now=$(date +%s)"
+}
+
+take_lock() {
+	local i=0
+	while ! mkdir "$LOCK" 2>/dev/null; do
+		i=$((i + 1))
+		if [ "$i" -ge 12 ]; then
+			rmdir "$LOCK" 2>/dev/null
+			mkdir "$LOCK" 2>/dev/null && break
+		fi
+		sleep 0.35
+	done
+	trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+}
+
+stop_ua3f() {
+	[ -x "$INIT/ua3f" ] && "$INIT/ua3f" stop >/dev/null 2>&1
+	sleep 1
+}
+
+stop_ua2f() {
+	[ -x "$INIT/ua2f" ] && "$INIT/ua2f" stop >/dev/null 2>&1
+	[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" stop >/dev/null 2>&1
+	sleep 1
+}
+
+start_ua3f() {
+	stop_ua2f
+	[ -x "$INIT/ua2f" ] && "$INIT/ua2f" disable >/dev/null 2>&1
+	[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" disable >/dev/null 2>&1
+	uci -q set ua2f.enabled.enabled='0'
+	uci -q set ua3f.enabled.enabled='1'
+	uci -q commit ua2f
+	uci -q commit ua3f
+	[ -x "$INIT/ua3f" ] && "$INIT/ua3f" enable >/dev/null 2>&1
+	[ -x "$INIT/ua3f" ] && "$INIT/ua3f" start >/dev/null 2>&1
+	sleep 1
+	echo "msg=UA3F 已启动（UA2F 已停止并取消开机自启）"
+}
+
+start_ua2f() {
+	stop_ua3f
+	[ -x "$INIT/ua3f" ] && "$INIT/ua3f" disable >/dev/null 2>&1
+	uci -q set ua3f.enabled.enabled='0'
+	uci -q set ua2f.enabled.enabled='1'
+	uci -q commit ua3f
+	uci -q commit ua2f
+	[ -x "$INIT/ua2f" ] && "$INIT/ua2f" enable >/dev/null 2>&1
+	[ -x "$INIT/ua2f" ] && "$INIT/ua2f" start >/dev/null 2>&1
+	[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" enable >/dev/null 2>&1
+	[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" start >/dev/null 2>&1
+	sleep 1
+	echo "msg=UA2F 已启动（UA3F 已停止并取消开机自启）"
+}
+
+swap_rules() {
+	local new json out old
+	new="$1"
+	json="$(cfg ua3f.main.header_rewrite)"
+	[ -n "$json" ] || return 0
+	out="$json"
+	for old in "$UA_WINDOWS" "$UA_IPHONE" "$UA_ANDROID" "$UA_MAC"; do
+		[ "$old" = "$new" ] && continue
+		out="$(printf '%s' "$out" | sed "s|$old|$new|g")"
+	done
+	if [ "$out" != "$json" ]; then
+		uci -q set ua3f.main.header_rewrite="$out"
+	fi
+}
+
+set_mode() {
+	case "$1" in
+	fast)
+		uci -q set ua3f.main.l3_rewrite_ttl='1'
+		uci -q set ua3f.main.l3_rewrite_tcpts='0'
+		uci -q set ua3f.main.l3_rewrite_ipid='0'
+		uci -q set ua3f.main.l3_rewrite_tcpwin='0'
+		echo "msg=已恢复速度档：只固定 TTL（不启用 NFQUEUE）"
+		;;
+	*)
+		echo "msg=只保留速度档（$1 已下线）"
+		;;
+	esac
+	uci -q commit ua3f
+	if [ "$(running ua3f)" = "1" ]; then
+		[ -x "$INIT/ua3f" ] && "$INIT/ua3f" restart >/dev/null 2>&1
+		sleep 1
+	fi
+	return 0
+}
+
+set_persona() {
+	local name ua ttl
+	name="$1"
+	case "$name" in
+	windows) ua="$UA_WINDOWS"; ttl=128 ;;
+	iphone)  ua="$UA_IPHONE";  ttl=64  ;;
+	android) ua="$UA_ANDROID"; ttl=64  ;;
+	mac)     ua="$UA_MAC";     ttl=64  ;;
+	*) echo "msg=未知人格：$name（可选 windows / iphone / android / mac）"; return 1 ;;
+	esac
+
+	# ---- UA3F：UA + TTL + 规则里的改写值，三样一起换 ----
+	uci -q set ua3f.main.ua="$ua"
+	uci -q set ua3f.main.l3_rewrite_ttl='1'
+	uci -q set ua3f.main.l3_rewrite_ttl_value="$ttl"
+	swap_rules "$ua"
+	uci -q commit ua3f
+
+	# ---- UA2F：人格 + UA 同步（TTL 由 ua2f-ttl 按人格推导）----
+	uci -q set ua2f.main.persona="$name"
+	uci -q set ua2f.main.custom_ua="$ua"
+	uci -q delete ua2f.main.fix_ttl_value
+	uci -q commit ua2f
+
+	# 只重启"正在跑"的那个，绝不顺手把另一个拉起来
+	if [ "$(running ua3f)" = "1" ]; then
+		[ -x "$INIT/ua3f" ] && "$INIT/ua3f" restart >/dev/null 2>&1
+		sleep 1
+	fi
+	if [ "$(running ua2f)" = "1" ]; then
+		[ -x "$INIT/ua2f" ] && "$INIT/ua2f" restart >/dev/null 2>&1
+		[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" restart >/dev/null 2>&1
+		sleep 1
+	fi
+
+	echo "msg=人格已切到 $name：UA 和 TTL=$ttl 同时生效（UA3F + UA2F 都同步了）"
+	return 0
+}
+
+case "$1" in
+status)
+	status
+	;;
+start)
+	take_lock
+	case "$2" in
+	ua3f) [ -x "$INIT/ua3f" ] || { echo "msg=UA3F 未安装"; status; exit 0; }; start_ua3f ;;
+	ua2f) [ -x "$INIT/ua2f" ] || { echo "msg=UA2F 未安装"; status; exit 0; }; start_ua2f ;;
+	*) echo "msg=用法: start ua3f|ua2f" ;;
+	esac
+	status
+	;;
+stop)
+	take_lock
+	case "$2" in
+	ua3f)
+		stop_ua3f
+		[ -x "$INIT/ua3f" ] && "$INIT/ua3f" disable >/dev/null 2>&1
+		uci -q set ua3f.enabled.enabled='0'; uci -q commit ua3f
+		echo "msg=UA3F 已停止（并取消开机自启）"
+		;;
+	ua2f)
+		stop_ua2f
+		[ -x "$INIT/ua2f" ] && "$INIT/ua2f" disable >/dev/null 2>&1
+		[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" disable >/dev/null 2>&1
+		uci -q set ua2f.enabled.enabled='0'; uci -q commit ua2f
+		echo "msg=UA2F 已停止（并取消开机自启）"
+		;;
+	all)
+		stop_ua3f
+		stop_ua2f
+		[ -x "$INIT/ua3f" ] && "$INIT/ua3f" disable >/dev/null 2>&1
+		[ -x "$INIT/ua2f" ] && "$INIT/ua2f" disable >/dev/null 2>&1
+		[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" disable >/dev/null 2>&1
+		uci -q set ua3f.enabled.enabled='0'
+		uci -q set ua2f.enabled.enabled='0'
+		uci -q commit ua3f
+		uci -q commit ua2f
+		echo "msg=两个引擎都停了，开机也不会自启（自动登录 netcheck 不受影响）"
+		;;
+	*) echo "msg=用法: stop ua3f|ua2f|all" ;;
+	esac
+	status
+	;;
+mode)
+	take_lock
+	set_mode "$2"
+	status
+	;;
+persona)
+	take_lock
+	set_persona "$2"
+	status
+	;;
+*)
+	echo "msg=用法: ua-engine-web status|start|stop|mode|persona ..."
+	;;
+esac
+
+exit 0

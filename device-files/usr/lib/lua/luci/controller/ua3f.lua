@@ -1,7 +1,7 @@
 module("luci.controller.ua3f", package.seeall)
 
 function index()
-    entry({ "admin", "services", "ua3f" }, cbi("ua3f"), _("UA3F"), 1)
+    entry({ "admin", "services", "ua3f" }, cbi("ua3f"), _("UA3F 防检测"), 2)
     entry({ "admin", "services", "ua3f", "status" }, call("get_status")).leaf = true
     entry({ "admin", "services", "ua3f", "download_log" }, call("action_download_log")).leaf = true
     entry({ "admin", "services", "ua3f", "clear_log" }, call("clear_log")).leaf = true

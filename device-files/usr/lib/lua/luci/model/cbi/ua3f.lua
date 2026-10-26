@@ -17,7 +17,16 @@ local function load_version_desc()
     ]]
 end
 
-local ua3f = cbi.Map("ua3f", "UA3F", load_version_desc())
+-- 界面美化层：只挂一个 CSS + 一个 JS（水印、徽标、吸底按钮等纯装饰）
+-- 不碰任何 CBI 字段，资源文件缺失时页面照常工作
+local function theme_assets()
+    return table.concat({
+        '<link rel="stylesheet" href="/luci-static/resources/ua3f/ua3f-theme.css?v=1">',
+        '<script src="/luci-static/resources/ua3f/ua3f-theme.js?v=1"></script>'
+    }, "\n")
+end
+
+local ua3f = cbi.Map("ua3f", "UA3F 防检测", theme_assets() .. load_version_desc())
 
 local status = require("luci.model.cbi.ua3f.status")
 local general = require("luci.model.cbi.ua3f.general")
