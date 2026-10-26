@@ -1,0 +1,218 @@
+/* =====================================================================
+   au 统一界面层（给「服务」下各页共用）        by au学长 V：aauuo0
+   作用域：加了 .au-page 的容器；只改配色/圆角/间距，不动任何控件显隐
+   ===================================================================== */
+
+.au-page {
+	--au-accent: #5e72e4;
+	--au-accent2: #483d8b;
+	--au-line: rgba(128, 146, 184, .22);
+	--au-card: rgba(127, 140, 170, .07);
+	--au-card2: rgba(127, 140, 170, .12);
+	max-width: 1080px;
+	margin: 0 auto;
+}
+
+/* ---------- 标题 ---------- */
+.au-page > h2,
+.au-page h2:first-of-type {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+	margin: 2px 0 10px;
+	letter-spacing: .3px;
+}
+
+.au-tag {
+	display: inline-block;
+	padding: 2px 9px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.7;
+	color: #93a4f2;
+	background: rgba(94, 114, 228, .18);
+	border: 1px solid rgba(94, 114, 228, .35);
+}
+
+/* ---------- 顶部说明 ---------- */
+.au-page .cbi-map-descr {
+	padding: 12px 16px;
+	margin: 0 0 14px;
+	border: 1px solid var(--au-line);
+	border-left: 3px solid var(--au-accent);
+	border-radius: 12px;
+	background: linear-gradient(135deg, var(--au-card2), transparent 70%);
+	font-size: 13px;
+	line-height: 1.75;
+}
+
+/* ---------- 卡片 ---------- */
+.au-page .cbi-section,
+.au-page fieldset.cbi-section {
+	padding: 6px 18px 14px;
+	margin: 14px 0;
+	border: 1px solid var(--au-line);
+	border-radius: 14px;
+	background: var(--au-card);
+	box-shadow: 0 6px 22px rgba(0, 0, 0, .06);
+}
+
+.au-page .cbi-section > legend,
+.au-page .cbi-section > h3 {
+	padding: 0 8px;
+	font-size: 14.5px;
+	font-weight: 700;
+}
+
+.au-page .cbi-section > h3 {
+	padding: 10px 0 2px;
+	margin: 0 0 4px;
+}
+
+/* ---------- 表单行 ---------- */
+.au-page .cbi-value {
+	padding: 9px 2px;
+	border-bottom: 1px dashed rgba(128, 146, 184, .16);
+}
+
+.au-page .cbi-value:last-child { border-bottom: 0; }
+
+.au-page .cbi-value-title {
+	font-weight: 600;
+	font-size: 13px;
+	opacity: .92;
+}
+
+.au-page .cbi-value-description {
+	font-size: 12px;
+	opacity: .62;
+	line-height: 1.6;
+}
+
+/* ---------- 输入控件 ---------- */
+.au-page input[type="text"],
+.au-page input[type="password"],
+.au-page input[type="number"],
+.au-page select,
+.au-page textarea,
+.au-page .cbi-input-text,
+.au-page .cbi-input-password,
+.au-page .cbi-input-select,
+.au-page .cbi-input-textarea {
+	padding: 7px 10px !important;
+	border: 1px solid var(--au-line) !important;
+	border-radius: 10px !important;
+	background: rgba(0, 0, 0, .14) !important;
+	box-shadow: none !important;
+	transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.au-page input:focus,
+.au-page select:focus,
+.au-page textarea:focus {
+	border-color: var(--au-accent) !important;
+	box-shadow: 0 0 0 3px rgba(94, 114, 228, .18) !important;
+	outline: none !important;
+}
+
+/* ---------- 按钮 ---------- */
+.au-page .cbi-button {
+	padding: 7px 15px !important;
+	border-radius: 10px !important;
+	border: 1px solid var(--au-line) !important;
+	font-size: 13px;
+	font-weight: 500;
+	box-shadow: none !important;
+	transition: transform .12s ease, filter .12s ease;
+}
+
+.au-page .cbi-button:hover { transform: translateY(-1px); filter: brightness(1.06); }
+
+.au-page .cbi-button-apply,
+.au-page .cbi-button-action,
+.au-page .cbi-button-positive,
+.au-page .cbi-button-save,
+.au-page .cbi-button-add {
+	color: #fff !important;
+	border-color: transparent !important;
+	background: linear-gradient(135deg, var(--au-accent), var(--au-accent2)) !important;
+}
+
+.au-page .cbi-button-reset,
+.au-page .cbi-button-negative,
+.au-page .cbi-button-remove,
+.au-page .cbi-button-delete {
+	color: #f08a8a !important;
+	border-color: rgba(224, 96, 96, .35) !important;
+	background: rgba(224, 96, 96, .12) !important;
+}
+
+/* ---------- 表格 / 输出框 ---------- */
+.au-page table { width: 100%; border-collapse: separate; border-spacing: 0 5px; }
+.au-page th {
+	padding: 6px 9px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #8ea;
+	text-align: left;
+}
+.au-page td {
+	padding: 8px 9px;
+	border-top: 1px solid var(--au-line);
+	border-bottom: 1px solid var(--au-line);
+	background: var(--au-card);
+}
+
+.au-page pre,
+.au-page textarea[readonly] {
+	border-radius: 10px !important;
+	font-family: ui-monospace, Consolas, monospace;
+	font-size: 12px;
+	line-height: 1.6;
+}
+
+/* ---------- 提示条 ---------- */
+.au-page .alert-message,
+.au-page .cbi-section-error,
+.au-page .au-warn {
+	border-radius: 10px;
+	padding: 10px 14px;
+	border: 1px solid rgba(224, 96, 96, .4);
+	background: rgba(224, 96, 96, .12);
+	color: #f3a0a0;
+	font-size: 13px;
+	line-height: 1.7;
+}
+
+/* ---------- 水印（所有页统一） ---------- */
+.au-page .au-wm {
+	position: fixed;
+	left: 0; right: 0; top: 38%;
+	z-index: 0;
+	text-align: center;
+	white-space: nowrap;
+	pointer-events: none;
+	user-select: none;
+	transform: rotate(-22deg);
+	font-size: clamp(26px, 5.5vw, 62px);
+	font-weight: 700;
+	letter-spacing: .08em;
+	color: rgba(128, 140, 168, .085);
+}
+
+.au-page .au-wmc {
+	position: fixed;
+	right: 14px; bottom: 8px;
+	z-index: 9;
+	font-size: 12px;
+	pointer-events: none;
+	user-select: none;
+	color: rgba(128, 140, 168, .55);
+}
+
+@media (max-width: 720px) {
+	.au-page .cbi-section { padding: 4px 12px 12px; border-radius: 12px; }
+	.au-page .cbi-value-title { width: 100% !important; padding-bottom: 4px; }
+}

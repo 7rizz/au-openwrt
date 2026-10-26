@@ -511,23 +511,6 @@ return view.extend({
 			E('div', {}, BRAND_LINE2)
 		]);
 
-		var authorSection = E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, _('关于作者')),
-			E('div', { 'style': 'display:flex; align-items:center; flex-wrap:wrap; gap:16px' }, [
-				E('img', {
-					'src': qrUrl, 'alt': 'author', 'style':
-						'width:150px; height:auto; background:#fff; ' +
-						'border:1px solid #ddd; border-radius:4px'
-				}),
-				E('div', { 'style': 'line-height:1.8' }, [
-					E('div', { 'style': 'font-weight:bold; font-size:14px' }, BRAND_LINE1),
-					E('div', {}, BRAND_LINE2),
-					E('div', { 'class': 'cbi-value-description' },
-						_('有问题或者想定制，扫码加作者微信。'))
-				])
-			])
-		]);
-
 		paint(activeInstance(data[5]), data[6]);
 		paintLogPath();
 		refreshLog();
@@ -543,15 +526,16 @@ return view.extend({
 			return refreshLog().then(refreshStatus);
 		}, 5);
 
-		return E('div', { 'class': 'cbi-map' }, [
+		return E('div', { 'class': 'cbi-map au-page' }, [
+			E('link', { 'rel': 'stylesheet', 'href': '/luci-static/resources/au/ui.css' }),
+			E('div', { 'class': 'au-wm' }, '作者：au学长 V：aauuo0'),
+			E('div', { 'class': 'au-wmc' }, '作者：au学长 V：aauuo0'),
 			E('h2', {}, BRAND_LINE1),
 			E('div', { 'class': 'cbi-map-descr' }, [
 				BRAND_LINE2,
 				E('br', {}, ''),
-				_('自动识别校园网认证页面并登录，掉线后自动重连。' +
-					'这里可以启停服务、改账号、改参数、测试登录、看日志。')
+				_('账号为空时不会自动启动（保护）。')
 			]),
-			authorSection,
 			statusSection,
 			accountSection,
 			settingsSection,

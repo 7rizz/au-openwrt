@@ -123,11 +123,7 @@ return view.extend({
 					}),
 					busy
 				],
-				_('大约 10~25 秒。它会：探测重定向找出门户地址 → 拆出 URL 参数 → 抓门户登录页的表单字段 → 判断是哪家认证系统。')),
-			row(_('什么时候用'),
-				[
-					E('div', {}, _('换学校、换宿舍楼、学校升级了认证系统、原来的自动登录突然不好使了 —— 先跑这一步。'))
-				])
+				null),
 		]);
 
 		var capSection = section(_('第 2 步：抓包分析认证请求（可选，更准）'), [
@@ -151,11 +147,12 @@ return view.extend({
 				_('鼠标点进下面的框 → Ctrl+A 全选 → Ctrl+C 复制，然后发给我，我据此写/改自动登录脚本。'))
 		]);
 
-		return E('div', { 'class': 'cbi-map' }, [
+		return E('div', { 'class': 'cbi-map au-page' }, [
+			E('link', { 'rel': 'stylesheet', 'href': '/luci-static/resources/au/ui.css' }),
+			E('div', { 'class': 'au-wm' }, '作者：au学长 V：aauuo0'),
+			E('div', { 'class': 'au-wmc' }, '作者：au学长 V：aauuo0'),
 			E('h2', {}, _('认证门户探测')),
-			E('div', { 'style': 'font-weight:bold; color:#c0392b; margin:2px 0 8px' }, '作者：au学长　V：aauuo0'),
-			E('div', { 'class': 'cbi-map-descr' },
-				_('给「换个学校 / 换个楼栋，认证方式变了」用的工具：跑一遍，把报告发出来，就能生成对应的自动登录插件。')),
+			E('div', { 'style': 'margin:2px 0 10px' }, [E('span', { 'class': 'au-tag' }, '作者：au学长 V：aauuo0')]),
 			probeSection,
 			capSection,
 			outSection
