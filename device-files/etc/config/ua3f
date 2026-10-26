@@ -15,13 +15,13 @@ config 'ua3f' 'main'
 	option bind '0.0.0.0'
 	# RULE = 按下面的 header_rewrite 规则改；GLOBAL = 全改
 	option rewrite_mode 'RULE'
-	# 人格 UA（iPhone）：和 TTL=64 配套。换人格见 docs/校园网防检测.md
-	option ua 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+	# 人格 UA（Windows/电脑）：和 TTL=128 配套。换人格见 docs/校园网防检测.md
+	option ua 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 	option ua_regex ''
 	option partial_replace '0'
 	option log_level 'WARN'
 	option log_lines '1000'
-	option header_rewrite '[{"enabled":true,"type":"DOMAIN-SUFFIX","match_value":"ua-check.stagoh.com","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"},{"enabled":false,"type":"DEST-PORT","match_value":"443","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"MicroMessenger Client","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"Bilibili Freedoooooom/MarkII","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"Valve/Steam HTTP Client 1.0","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"Mac","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"},{"enabled":true,"type":"HEADER-REGEX","match_header":"User-Agent","match_value":"(Apple|iPhone|iPad|Macintosh|Mac OS X|Mac|Darwin|Microsoft|Windows|Linux|Android|OpenHarmony|HUAWEI|OPPO|Vivo|XiaoMi|Mobile|Dalvik)","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"},{"enabled":true,"type":"FINAL","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1","description":"Default Fallback Rule"}]'
+	option header_rewrite '[{"enabled":true,"type":"DOMAIN-SUFFIX","match_value":"ua-check.stagoh.com","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"},{"enabled":false,"type":"DEST-PORT","match_value":"443","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"MicroMessenger Client","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"Bilibili Freedoooooom/MarkII","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"Valve/Steam HTTP Client 1.0","action":"DIRECT"},{"enabled":true,"type":"HEADER-KEYWORD","match_header":"User-Agent","match_value":"Mac","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"},{"enabled":true,"type":"HEADER-REGEX","match_header":"User-Agent","match_value":"(Apple|iPhone|iPad|Macintosh|Mac OS X|Mac|Darwin|Microsoft|Windows|Linux|Android|OpenHarmony|HUAWEI|OPPO|Vivo|XiaoMi|Mobile|Dalvik)","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"},{"enabled":true,"type":"FINAL","action":"REPLACE","rewrite_header":"User-Agent","rewrite_value":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36","description":"Default Fallback Rule"}]'
 
 	# ---- L3 重写：把同一账号下多台设备的网络层特征抹平 ----
 	# 速度档（默认）：只开 TTL。TTL 是 nft 规则在核心里改，不进用户态，几乎不花钱。
@@ -30,10 +30,10 @@ config 'ua3f' 'main'
 	#   搬到用户态改完再送回去（每个包一次内核↔用户态拷贝）。
 	#   官方文档实测：NFQUEUE 路径 CPU 44.9%，eBPF 路径 7.9%；
 	#   而 eBPF 加速要求内核 ≥5.15 且明确不支持 MIPS32 —— AC2100 是 MT7621(MIPS32)，用不了。
-	#   所以这两项在 AC2100 上开着的代价就是：整机吞吐掉一大截、CPU 打满。
-	#   想要最高隐蔽度就 `ua-engine stealth`（会开这两项），想快就保持下面这样。
+	#   所以这两项在 AC2100 上一律保持关闭（档位只剩「速度档」），
+	#   想做实验可以手动改成 1，但会立刻掉速；`ua-engine fast` 可以复位。
 	option l3_rewrite_ttl '1'
-	option l3_rewrite_ttl_value '64'
+	option l3_rewrite_ttl_value '128'
 	option l3_rewrite_tcpts '0'
 	option l3_rewrite_ipid '0'
 	option l3_rewrite_tcpwin '0'

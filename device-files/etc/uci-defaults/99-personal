@@ -121,10 +121,16 @@ fi
 # ---------------------------------------------------------------
 # 6. 校园网防检测 + 自动登录（组件已内置在固件里，这里只负责开机启用）
 #    默认引擎 = UA3F（TPROXY 0.0.0.0:1080），参数在 /etc/config/ua3f，
-#    页面在 LuCI「服务 → UA3F」。
+#    页面在 LuCI「服务 → UA3F 防检测」。
 #    UA2F 留在固件里但默认关闭：两个引擎会抢同一份出站流量，
 #    切换用 ua-engine ua3f / ua-engine ua2f / ua-engine off。
 # ---------------------------------------------------------------
+# mwan3 和 UA 引擎抢同一套 fwmark/ip rule：两个都开，TPROXY 会直接失效。
+# full 版会装上 mwan3（多拨），这里默认停掉；真要用多拨就先 ua-engine off。
+if [ -x /etc/init.d/mwan3 ]; then
+	/etc/init.d/mwan3 stop    >/dev/null 2>&1
+	/etc/init.d/mwan3 disable >/dev/null 2>&1
+fi
 if [ -x /etc/init.d/ua2f ]; then
 	/etc/init.d/ua2f stop    >/dev/null 2>&1
 	/etc/init.d/ua2f disable >/dev/null 2>&1
@@ -133,8 +139,6 @@ fi
 # 只 enable，不当场 start：这一步还在 boot 里跑，等 network/firewall 就绪后
 # rcS 会按 /etc/rc.d 的顺序把它拉起来（同一个开机过程内就生效）
 [ -x /etc/init.d/ua3f ] && /etc/init.d/ua3f enable >/dev/null 2>&1
-# 网络波动监测的后台采样器（页面里写着"默认已开机自启"，靠这行才真生效）
-[ -x /etc/init.d/netmon-sampler ] && /etc/init.d/netmon-sampler enable >/dev/null 2>&1
 if [ -x /etc/init.d/netcheck ] && grep -q '^USERNAME=.' /etc/auth.conf 2>/dev/null; then
 	/etc/init.d/netcheck enable
 fi
