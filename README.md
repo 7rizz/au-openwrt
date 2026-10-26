@@ -55,7 +55,6 @@
    | 参数 | 填什么 |
    | --- | --- |
    | `profile` | `campus` ＝ 校园网防检测版（推荐）／`full` ＝ 全能版 |
-   | `variant` | 现在只有 `full` 生效（工作流里还没做 lite 分支，填 `lite` 不会变小） |
    | `device` | 机型代号，默认 `xiaomi_redmi-router-ac2100`；换别的机器看 [configs/devices.list](configs/devices.list) 第一列（每行的最后一列写了该机型的最大固件体积，一眼看出装不装得下 UA3F） |
 
    填完点绿色按钮。
@@ -68,7 +67,7 @@
 ## 三、固件里装了什么
 
 **校园网防检测**：**UA3F 3.7.0**（主引擎，TPROXY :1080，改 UA + 固定 TTL + 清 TCP 时间戳 + IPID 归零，页面在「服务 → UA3F」）；UA2F 4.10.2（备引擎，默认关闭，`ua-engine ua2f` 可切换，两者互斥）
-**自己写的四个页面**（都在「服务」菜单）：UA3F 防检测、连接设备、网络波动监测、WAN MAC 工具
+**自己写的四个页面**（都在「服务」菜单）：**防检测引擎**（排第一，UA3F/UA2F 启停与档位控制台）、UA3F 防检测（详细设置）、连接设备、WAN MAC 工具
 **自动登录 / 探测**：顺枫公寓自动登录（netcheck）、认证门户探测（portal-probe）
 **科学上网（三种任选，默认都不自动启动）**：OpenClash、PassWall、SSR-Plus
 **DNS / 去广告**：AdGuard Home
@@ -90,10 +89,10 @@
 | WiFi 名字 / WiFi 密码 | `device-files/etc/init.d/personal-wifi` | 文件开头的 4 个变量 |
 | 加/删插件 | `configs/ac2100.seed` | 注释掉某行 = 删掉该插件；去掉 `#` = 加上 |
 | OpenWrt 版本 | `.github/workflows/build.yml` | `default: "v24.10.8"` |
-| **UA3F 人格 UA / TTL** | `device-files/etc/config/ua3f` | `option ua`（换 UA）、`option l3_rewrite_ttl_value`（64=手机，128=Windows） |
+| **UA3F 人格 UA / TTL** | `device-files/etc/config/ua3f` | `option ua`（换 UA）、`option l3_rewrite_ttl_value`（**默认 128＝电脑**；64＝手机） |
 | **换 UA3F 的规则 / 模式** | 路由器上「服务 → UA3F」 | 改完点「保存并应用」，命令行等价 `uci commit ua3f && /etc/init.d/ua3f restart` |
 | **切 UA3F ↔ UA2F ↔ 全关** | 路由器上执行 | `ua-engine ua3f` / `ua-engine ua2f` / `ua-engine off`（`ua-engine` 只看状态） |
-| **网速慢（UA3F 老毛病）** | 路由器上执行 | `ua-engine fast` ＝ 只固定 TTL（默认档）／`ua-engine stealth` ＝ 再加 IPID + TCP 时间戳（更隐蔽，但 MIPS32 上会明显掉速） |
+| **网速慢（UA3F 老毛病）** | 路由器上执行 | 档位只剩「速度档」（只固定 TTL）；如果 `ua-engine status` 里看到 `TCPts=1` 或 `IPID=1`，执行 `ua-engine fast` 复位 |
 
 改完在 GitHub 网页上重新上传该文件（或 `git push`），Actions 会自动重新编译。
 
