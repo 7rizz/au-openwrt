@@ -137,6 +137,17 @@ jobs:
                  openwrt/files/usr/share/luci/menu.d/luci-app-uadetect.json \
                  openwrt/files/usr/share/rpcd/acl.d/luci-app-uadetect.json \
                  openwrt/files/www/luci-static/resources/view/uadetect.js
+          # 兜底 2：仓库里可能还留着已下线的「网络波动监测」和过时资料。
+          # 这些本地早就删了，但 GitHub 网页上传只覆盖不删除，不清理会跟着进固件。
+          rm -rf openwrt/files/etc/init.d/netmon-sampler \
+                 openwrt/files/usr/libexec/netmon-sample \
+                 openwrt/files/usr/share/luci/menu.d/luci-app-netmon.json \
+                 openwrt/files/www/cgi-bin/netmon \
+                 openwrt/files/www/luci-static/resources/view/netmon.js \
+                 openwrt/files/www/cgi-bin/ua2f \
+                 openwrt/files/root/ua-docs \
+                 openwrt/files/root/firewall-antidetect.sh \
+                 openwrt/files/etc/uci-defaults/98-drcomauth-enable
           # 防检测引擎：UA3F 3.7.0（主，TPROXY:1080）+ UA2F 4.10.2（备，默认关闭）
           # 判断镜像里到底进了哪个，见第 10 步的自检
           # 恢复可执行权限（二进制和脚本必须能执行）
