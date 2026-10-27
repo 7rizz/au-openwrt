@@ -12,6 +12,11 @@ ttl_get() { nft list chain ip ua2f_ttl postrouting 2>/dev/null | sed -n 's/.*ip 
 
 ttl_set() {
 	[ -n "$1" ] || return 1
+	# UA3F 在跑的时候 TTL 归它管；这里再插一条同优先级规则会互相覆盖
+	if pgrep -f /usr/bin/ua3f >/dev/null 2>&1; then
+		echo "ERROR: UA3F 正在运行，TTL 由 UA3F 统一设置；要改 TTL 请先 ua-engine off" >&2
+		return 1
+	fi
 	command -v nft >/dev/null 2>&1 || return 1
 	nft list table ip ua2f_ttl >/dev/null 2>&1 || nft add table ip ua2f_ttl
 	nft list chain ip ua2f_ttl postrouting >/dev/null 2>&1 || \
