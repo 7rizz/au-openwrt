@@ -34,11 +34,19 @@ on:
       - "configs/**"
       - "device-files/**"
 
+# 同一分支只允许一个编译在跑，新推送会自动取消排队中的旧任务
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: 编译固件
     runs-on: ubuntu-22.04
     timeout-minutes: 360
+    # 一键同步脚本产生的提交（消息以 sync: 开头）不触发编译，避免一次同步刷出几十个排队任务。
+    # 需要编译时手动点 Run workflow。
+    if: ${{ !startsWith(github.event.head_commit.message, 'sync:') }}
 
     steps:
       - name: 1. 检出本仓库
