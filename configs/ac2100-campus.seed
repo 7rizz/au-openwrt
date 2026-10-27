@@ -67,6 +67,7 @@ CONFIG_PACKAGE_libgcc1=y
 
 # ---------- 6. 顺枫公寓自动登录（netcheck）需要 ----------
 CONFIG_PACKAGE_curl=y
+CONFIG_PACKAGE_openssl-util=y          # 润泽公寓 Dr.COM 登录要用 aes-128-ecb
 CONFIG_PACKAGE_ca-bundle=y
 CONFIG_PACKAGE_ca-certificates=y
 
