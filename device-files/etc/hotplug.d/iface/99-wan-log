@@ -1,0 +1,4 @@
+#!/bin/sh
+# WAN 口每次 up/down 都记一笔，方便事后对时间点  by au学长 V：aauuo0
+[ "$INTERFACE" = "wan" ] || exit 0
+echo "$(date '+%m-%d %H:%M:%S') $ACTION $INTERFACE" >>/tmp/wan-flap.log

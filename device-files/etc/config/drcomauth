@@ -1,0 +1,19 @@
+# Dr.COM 哆点（润泽公寓）自动登录配置
+# 由 LuCI「服务 → 润泽公寓自动登录」维护，也可以直接 uci set。
+# 密码保存在本文件，权限 600，仅 root 可读。
+
+config service 'main'
+	option username ''
+	option password ''
+	option isp ''
+	option prefix ',0,'
+	option portal '10.255.224.4'
+	option scheme 'http'
+	option port '801'
+	option wan_if ''
+	option interval '60'
+	option mode 'aes'
+	option mac_source 'wan'
+	option online_url 'http://connect.rom.miui.com/generate_204'
+	option timeout '8'
+	option debug '0'

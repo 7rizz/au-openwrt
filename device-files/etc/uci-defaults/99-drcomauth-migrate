@@ -1,0 +1,26 @@
+#!/bin/sh
+# 把旧版 /etc/drcomauth.conf 里的账号导入 UCI（只导入一次）。
+# 旧文件保留不删，方便回滚；UCI 有账号后服务只认 UCI。
+
+[ -f /etc/config/drcomauth ] || exit 0
+[ -n "$(uci -q get drcomauth.main.username 2>/dev/null)" ] && exit 0
+[ -r /etc/drcomauth.conf ] || exit 0
+
+. /etc/drcomauth.conf 2>/dev/null
+
+[ -n "$USER" ] && uci -q set drcomauth.main.username="$USER"
+[ -n "$PASS" ] && uci -q set drcomauth.main.password="$PASS"
+uci -q set drcomauth.main.isp="${ISP:-}"
+[ -n "$PREFIX" ] && uci -q set drcomauth.main.prefix="$PREFIX"
+[ -n "$PORTAL" ] && uci -q set drcomauth.main.portal="$PORTAL"
+[ -n "$PORTAL_SCHEME" ] && uci -q set drcomauth.main.scheme="$PORTAL_SCHEME"
+[ -n "$EP_PORT" ] && uci -q set drcomauth.main.port="$EP_PORT"
+[ -n "$WAN_IF" ] && uci -q set drcomauth.main.wan_if="$WAN_IF"
+[ -n "$MODE" ] && uci -q set drcomauth.main.mode="$MODE"
+[ -n "$MAC_SOURCE" ] && uci -q set drcomauth.main.mac_source="$MAC_SOURCE"
+[ -n "$ONLINE_URL" ] && uci -q set drcomauth.main.online_url="$ONLINE_URL"
+
+uci -q commit drcomauth
+chmod 600 /etc/config/drcomauth 2>/dev/null
+
+exit 0

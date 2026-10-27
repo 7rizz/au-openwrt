@@ -1,0 +1,13 @@
+#!/bin/sh /etc/rc.common
+# 崩溃取证服务（只写关键日志行到 /root/crash.log）  by au学长 V：aauuo0
+START=98
+USE_PROCD=1
+
+start_service() {
+	procd_open_instance
+	procd_set_param command /bin/sh /usr/bin/crashlog.sh
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 0
+	procd_set_param stderr 0
+	procd_close_instance
+}

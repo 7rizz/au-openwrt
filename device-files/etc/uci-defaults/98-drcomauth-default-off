@@ -1,0 +1,12 @@
+#!/bin/sh
+# 润泽公寓 Dr.COM 自动登录：默认【关闭】，由用户在「服务 → 润泽公寓自动登录」里手动开启
+# （页面上的「开启开机自启 / 启动」按钮）。
+# 这里只做两件事：确保没有残留的开机自启，顺便把配置权限收紧到 600。
+# by au学长 V：aauuo0
+
+if [ -x /etc/init.d/drcomauth ]; then
+	/etc/init.d/drcomauth stop    >/dev/null 2>&1
+	/etc/init.d/drcomauth disable >/dev/null 2>&1
+fi
+chmod 600 /etc/config/drcomauth 2>/dev/null
+exit 0

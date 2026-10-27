@@ -137,6 +137,7 @@ return view.extend({
 		/* -------------------------------------------------------- status */
 		var statusText  = E('strong', {}, _('检查中…'));
 		var enabledText = E('strong', {}, _('…'));
+		var enabledState = null;
 
 		function paint(inst, enabled) {
 			statusText.textContent  = inst
@@ -145,6 +146,11 @@ return view.extend({
 			statusText.style.color  = inst ? '#3c9' : '#c33';
 			enabledText.textContent = (enabled == null) ? _('未知') : (enabled ? _('是') : _('否'));
 			enabledText.style.color = (enabled == null) ? '' : (enabled ? '#3c9' : '#c33');
+			enabledState = enabled;
+			if (btnAuto) {
+				btnAuto.textContent = enabled ? _('关闭开机自启') : _('开启开机自启');
+				btnAuto.className = enabled ? 'cbi-button cbi-button-reset' : 'cbi-button cbi-button-apply';
+			}
 		}
 
 		function refreshStatus() {
@@ -241,6 +247,14 @@ return view.extend({
 			'type': 'button', 'class': 'cbi-button cbi-button-action',
 			'click': function() { return run('restart', _('重启')); }
 		}, _('重启'));
+
+		var btnAuto = E('button', {
+			'type': 'button', 'class': 'cbi-button cbi-button-apply',
+			'click': function() {
+				return run(enabledState ? 'disable' : 'enable',
+					enabledState ? _('关闭自启') : _('开启自启'));
+			}
+		}, _('开启开机自启'));
 
 		/* ------------------------------------------------------- account */
 		var userInput = E('input', { 'type': 'text', 'style': 'width:16em', 'spellcheck': 'false' }, '');
@@ -409,7 +423,7 @@ return view.extend({
 			]),
 			E('div', { 'class': 'cbi-value' }, [
 				E('div', { 'class': 'cbi-value-title' }, _('操作')),
-				E('div', { 'class': 'cbi-value-field' }, [ btnStart, ' ', btnStop, ' ', btnRestart ])
+				E('div', { 'class': 'cbi-value-field' }, [ btnStart, ' ', btnStop, ' ', btnRestart, ' ', btnAuto ])
 			])
 		]);
 

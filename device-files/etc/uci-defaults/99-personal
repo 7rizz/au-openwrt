@@ -139,13 +139,28 @@ fi
 # 只 enable，不当场 start：这一步还在 boot 里跑，等 network/firewall 就绪后
 # rcS 会按 /etc/rc.d 的顺序把它拉起来（同一个开机过程内就生效）
 [ -x /etc/init.d/ua3f ] && /etc/init.d/ua3f enable >/dev/null 2>&1
-if [ -x /etc/init.d/netcheck ] && grep -q '^USERNAME=.' /etc/auth.conf 2>/dev/null; then
-	/etc/init.d/netcheck enable
+# 崩溃取证：panic / OOM / 卡死 / 无线驱动错误都写进 /root/crash.log（重启不丢）
+[ -x /etc/init.d/crashlog ] && /etc/init.d/crashlog enable
+
+# 校园网自动登录两套（顺枫 netcheck / 润泽 drcomauth）都【默认关闭】，
+# 需要时在「服务」对应页面点「开启开机自启」+「启动」，或
+#   /etc/init.d/netcheck enable && /etc/init.d/netcheck start
+if [ -x /etc/init.d/netcheck ]; then
+	/etc/init.d/netcheck stop    >/dev/null 2>&1
+	/etc/init.d/netcheck disable >/dev/null 2>&1
+fi
+if [ -x /etc/init.d/drcomauth ]; then
+	/etc/init.d/drcomauth stop    >/dev/null 2>&1
+	/etc/init.d/drcomauth disable >/dev/null 2>&1
 fi
 
 # ---------------------------------------------------------------
 # 7. 提交配置
 # ---------------------------------------------------------------
+# 系统日志环形缓冲从 16KB 抬到 256KB：偶发断线要事后翻 log，
+# 默认那点空间几秒钟就被刷掉了，根本留不下证据。
+uci -q set system.@system[0].log_size='256'
+
 uci commit system
 uci commit network
 uci commit dhcp

@@ -1,0 +1,347 @@
+#!/bin/sh
+# ============================================================
+#  Dr.COM 哆点（润泽公寓 10.255.224.4）自动登录 - OpenWrt
+#
+#  流程和门户页面完全一致：
+#    1) 204 检测是否已在线
+#    2) 读 WAN 口的 IP / MAC（AC 看到的终端信息）
+#    3) GET  :801/eportal/portal/page/loadConfig   取 rcn / login_method
+#    4) GET  :801/eportal/portal/login?callback=dr1&params=<AES-128-ECB(JSON)>
+#    5) 看返回里的 "result":1 判断成功
+#
+#  配置来源（二选一，UCI 优先）：
+#    /etc/config/drcomauth     LuCI 页面维护（推荐）
+#    /etc/drcomauth.conf       旧版配置文件（升级时自动导入）
+#
+#  用法：
+#    drcom-auth              正常巡检（已在线就跳过）
+#    drcom-auth --force      即使已在线也强制重新认证（页面“测试登录”用）
+#    drcom-auth --debug      打印 JSON / 响应（注意：JSON 里有密码）
+#
+#  退出码：0 在线或登录成功；1 失败
+# ============================================================
+
+CONF="${DRCOM_CONF:-/etc/drcomauth.conf}"
+UCI_CONF="/etc/config/drcomauth"
+LOG_TAG="drcom-auth"
+LOG_FILE="${DRCOM_LOG:-/tmp/drcom-auth.log}"
+STATE_FILE="${DRCOM_STATE:-/tmp/drcom-auth.state}"
+STATUS_DIR="${DRCOM_STATUS_DIR:-/tmp/drcomauth}"
+STATUS_FILE="$STATUS_DIR/status.json"
+
+# AES-128 密钥：门户前端 CryptoJS 里的字符串 '5c1d5ad4dea0e8dd'
+# 注意 -K 要的是“字节的十六进制”，不是字符串本身。
+# 16 个 ASCII 字符 -> 35633164356164346465613065386464
+AES_KEY_HEX="35633164356164346465613065386464"
+
+FORCE=0
+CLI_DEBUG=0
+for arg in "$@"; do
+	case "$arg" in
+		--force|-f) FORCE=1 ;;
+		--debug)    CLI_DEBUG=1 ;;
+		--quiet|-q) QUIET=1 ;;
+	esac
+done
+
+# ---------------- 日志 / 状态 ----------------
+ts() { date '+%Y-%m-%d %H:%M:%S'; }
+
+trim_log() {
+	[ -f "$LOG_FILE" ] || return 0
+	size=$(wc -c <"$LOG_FILE" 2>/dev/null | tr -d ' ')
+	[ "${size:-0}" -gt 262144 ] || return 0
+	tail -c 131072 "$LOG_FILE" >"$LOG_FILE.tmp" 2>/dev/null && mv "$LOG_FILE.tmp" "$LOG_FILE"
+}
+
+log() {
+	msg="$*"
+	printf '%s [%s] %s\n' "$(ts)" "$LOG_TAG" "$msg" >>"$LOG_FILE" 2>/dev/null
+	logger -t "$LOG_TAG" "$msg" 2>/dev/null
+	[ -z "$QUIET" ] && printf '%s\n' "$msg"
+	trim_log
+}
+
+json_esc() {
+	printf '%s' "$1" | sed 's/[[:cntrl:]]//g' 2>/dev/null | tr -d '\n' \
+		| sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+write_status() {
+	state="$1"; msg="$2"; rc="$3"
+	mkdir -p "$STATUS_DIR" 2>/dev/null
+	esc=$(json_esc "$msg")
+	printf '{"state":"%s","message":"%s","ip":"%s","mac":"%s","iface":"%s","mode":"%s","ts":%s,"exit":%s}\n' \
+		"$state" "$esc" "${WAN_IP:-}" "${WAN_MAC:-}" "${WAN_IF:-}" "${MODE:-}" "$(date '+%s')" "${rc:-0}" \
+		>"$STATUS_FILE.tmp" 2>/dev/null && mv "$STATUS_FILE.tmp" "$STATUS_FILE" 2>/dev/null
+	chmod 644 "$STATUS_FILE" 2>/dev/null
+}
+
+# 状态没变就不重复写 syslog；但 status.json 每次都刷新时间戳
+note_state() {
+	state="$1"; msg="$2"; rc="$3"
+	key="$state|$msg"
+	if [ "$(cat "$STATE_FILE" 2>/dev/null)" != "$key" ]; then
+		printf '%s' "$key" >"$STATE_FILE" 2>/dev/null
+		log "$msg"
+	fi
+	write_status "$state" "$msg" "$rc"
+}
+
+die() {
+	dmsg="$1"; rc="${2:-1}"
+	log "ERROR: $dmsg"
+	write_status error "$dmsg" "$rc"
+	exit "$rc"
+}
+
+# ---------------- 默认值 ----------------
+PORTAL="10.255.224.4"
+PORTAL_SCHEME="http"
+EP_PORT="801"
+PREFIX=",0,"
+ISP=""
+USER=""
+PASS=""
+JSVER="4.X"
+TIMEOUT="8"
+WAN_IF=""
+MODE="aes"
+MAC_SOURCE="wan"
+ONLINE_URL="http://connect.rom.miui.com/generate_204"
+DEBUG="${DEBUG:-0}"
+QUIET="${QUIET:-0}"
+
+uci_get() { uci -q get "drcomauth.main.$1" 2>/dev/null; }
+
+# ---------------- 读取配置 ----------------
+# UCI 里已经有账号 -> 全部以 UCI 为准；否则退回旧版 /etc/drcomauth.conf。
+if [ -f "$UCI_CONF" ] && command -v uci >/dev/null 2>&1 && [ -n "$(uci_get username)" ]; then
+	USER=$(uci_get username)
+	PASS=$(uci_get password)
+	ISP=$(uci_get isp)
+	PREFIX=$(uci_get prefix);   [ -z "$PREFIX" ] && PREFIX=",0,"
+	PORTAL=$(uci_get portal);   [ -z "$PORTAL" ] && PORTAL="10.255.224.4"
+	PORTAL_SCHEME=$(uci_get scheme); [ -z "$PORTAL_SCHEME" ] && PORTAL_SCHEME="http"
+	EP_PORT=$(uci_get port);    [ -z "$EP_PORT" ] && EP_PORT="801"
+	WAN_IF=$(uci_get wan_if)
+	MODE=$(uci_get mode);       [ -z "$MODE" ] && MODE="aes"
+	MAC_SOURCE=$(uci_get mac_source); [ -z "$MAC_SOURCE" ] && MAC_SOURCE="wan"
+	ONLINE_URL=$(uci_get online_url); [ -z "$ONLINE_URL" ] && ONLINE_URL="http://connect.rom.miui.com/generate_204"
+	TIMEOUT=$(uci_get timeout); [ -z "$TIMEOUT" ] && TIMEOUT="8"
+	DEBUG=$(uci_get debug);     [ -z "$DEBUG" ] && DEBUG="0"
+else
+	[ -r "$CONF" ] && . "$CONF"
+fi
+
+[ "$CLI_DEBUG" = "1" ] && DEBUG=1
+
+# 兼容旧配置里的变量名
+[ -z "$USER" ] && USER="${USERNAME:-}"
+[ -z "$PASS" ] && PASS="${PASSWORD:-}"
+
+[ -n "$USER" ] || die "账号未配置：请打开 LuCI「服务 → 润泽公寓自动登录」填写，或设置 /etc/config/drcomauth" 1
+[ -n "$PASS" ] || die "密码未配置：请打开 LuCI「服务 → 润泽公寓自动登录」填写" 1
+
+# 运营商后缀统一成 @xx 形式；空 = 校园用户
+case "$ISP" in
+	''|@*) ;;
+	*) ISP="@$ISP" ;;
+esac
+
+case "$MODE" in
+	legacy|LEGACY) MODE="legacy" ;;
+	*) MODE="aes" ;;
+esac
+
+[ -z "$PREFIX" ] && PREFIX=",0,"
+[ -z "$TIMEOUT" ] && TIMEOUT="8"
+
+# ---------------- 单实例锁 ----------------
+LOCK_DIR="/var/run/drcom-auth.lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+	old=$(cat "$LOCK_DIR/pid" 2>/dev/null)
+	if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then
+		log "已有实例在运行（pid $old），本次跳过"
+		exit 0
+	fi
+	rm -rf "$LOCK_DIR"
+	mkdir "$LOCK_DIR" 2>/dev/null || die "无法创建锁目录 $LOCK_DIR" 1
+fi
+echo $$ >"$LOCK_DIR/pid"
+trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM
+
+# ---------------- 跳板 URL / 依赖 ----------------
+case "$PORTAL" in
+	http://*|https://*) BASE="$PORTAL" ;;
+	*) BASE="$PORTAL_SCHEME://$PORTAL" ;;
+esac
+
+UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+
+need() { command -v "$1" >/dev/null 2>&1; }
+need curl || die "缺少 curl，请执行：opkg update && opkg install curl" 1
+if [ "$MODE" = "aes" ]; then
+	need openssl || die "缺少 openssl-util。请执行 opkg install openssl-util，或在页面把认证方式改成“明文兼容”" 1
+fi
+if ! need openssl && ! need base64; then
+	die "系统缺少 base64 工具（openssl-util 或 busybox base64）" 1
+fi
+
+http_code() {
+	curl -s -o /dev/null -m "$TIMEOUT" -A "$UA" -w '%{http_code}' "$1" 2>/dev/null
+}
+
+b64() {
+	if need openssl; then
+		openssl base64 -A 2>/dev/null
+	else
+		base64 2>/dev/null | tr -d '\n'
+	fi
+}
+
+# ---------------- 1. WAN 接口 / IP / MAC ----------------
+if [ -z "$WAN_IF" ]; then
+	WAN_IF=$(ip route 2>/dev/null | awk '/^default/ {print $5; exit}')
+fi
+[ -z "$WAN_IF" ] && WAN_IF="wan"
+
+WAN_IP=""
+WAN_MAC=""
+if [ -r "/sys/class/net/$WAN_IF/address" ]; then
+	WAN_MAC=$(tr -d ':' <"/sys/class/net/$WAN_IF/address" 2>/dev/null | tr 'A-F' 'a-f')
+fi
+WAN_IP=$(ip -4 addr show dev "$WAN_IF" 2>/dev/null | awk '/inet /{print $2; exit}' | cut -d/ -f1)
+
+# ---------------- 2. 已在线就不重复登录 ----------------
+if [ "$FORCE" != "1" ]; then
+	if [ "$(http_code "$ONLINE_URL")" = "204" ]; then
+		note_state online "ONLINE - 已在线，跳过登录" 0
+		exit 0
+	fi
+fi
+
+# ---------------- 3. 门户页面里的 v4ip（AC 看到的 IP） ----------------
+INDEX=$(curl -s -m "$TIMEOUT" -A "$UA" "$BASE/" 2>/dev/null)
+P_IP=$(printf '%s' "$INDEX" | grep -oE "v4ip[[:space:]]*=[[:space:]]*['\"][0-9.]+['\"]" 2>/dev/null | head -n1 \
+	| grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' 2>/dev/null)
+[ -n "$P_IP" ] && [ "$P_IP" != "0.0.0.0" ] && WAN_IP="$P_IP"
+
+# MAC 默认用本机 WAN 口（页面可切换成门户返回的 olmac）
+CHK=$(curl -s -m "$TIMEOUT" -A "$UA" "$BASE/drcom/chkstatus?callback=dr1" 2>/dev/null)
+P_MAC=$(printf '%s' "$CHK" | sed -n 's/.*"olmac"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]*\)".*/\1/p' 2>/dev/null | head -n1)
+if [ -z "$P_MAC" ]; then
+	P_MAC=$(printf '%s' "$CHK" | sed -n 's/.*"ss4"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]*\)".*/\1/p' 2>/dev/null | head -n1)
+fi
+if [ -z "$P_MAC" ]; then
+	P_MAC=$(printf '%s' "$INDEX" | sed -n 's/.*ss4[[:space:]]*=[[:space:]]*"\([0-9a-fA-F]*\)".*/\1/p' 2>/dev/null | head -n1)
+fi
+if [ -n "$P_MAC" ] && [ "$P_MAC" != "000000000000" ]; then
+	P_MAC=$(printf '%s' "$P_MAC" | tr -d ':' | tr 'A-F' 'a-f')
+	if [ "$MAC_SOURCE" = "portal" ]; then
+		WAN_MAC="$P_MAC"
+	elif [ -n "$WAN_MAC" ] && [ "$P_MAC" != "$WAN_MAC" ]; then
+		if [ "$(cat /tmp/drcom-auth.macwarn 2>/dev/null)" != "$P_MAC|$WAN_MAC" ]; then
+			printf '%s' "$P_MAC|$WAN_MAC" >/tmp/drcom-auth.macwarn 2>/dev/null
+			log "WARN: 门户 olmac=$P_MAC 与本机 WAN MAC=$WAN_MAC 不一致，使用本机 MAC（可在页面把 MAC 来源改成“门户 olmac”）"
+		fi
+	fi
+fi
+
+[ -n "$WAN_IP" ] || die "取不到 WAN IP（接口 $WAN_IF）：请检查网线 / 上游 DHCP，或手动指定 WAN 接口" 1
+[ -n "$WAN_MAC" ] || die "取不到 WAN MAC（接口 $WAN_IF）：请检查接口名是否正确" 1
+
+log "WAN_IF=$WAN_IF IP=$WAN_IP MAC=$WAN_MAC MODE=$MODE MAC_SOURCE=$MAC_SOURCE ACCOUNT=$PREFIX$USER$ISP"
+
+# ---------------- 3. loadConfig 取 rcn ----------------
+IP_B64=$(printf '%s' "$WAN_IP" | b64)
+[ -n "$IP_B64" ] || die "WAN IP 的 Base64 编码失败" 1
+
+RAND=$(awk 'BEGIN{srand(); print int(rand()*10000)+500}')
+
+CFG=$(curl -s -m "$TIMEOUT" -A "$UA" -G "$BASE:$EP_PORT/eportal/portal/page/loadConfig" \
+	--data-urlencode "callback=dr1" \
+	--data-urlencode "program_index=" \
+	--data-urlencode "wlan_vlan_id=" \
+	--data-urlencode "wlan_user_ip=$IP_B64" \
+	--data-urlencode "wlan_user_ipv6=" \
+	--data-urlencode "wlan_user_ssid=" \
+	--data-urlencode "wlan_user_areaid=" \
+	--data-urlencode "wlan_ac_ip=" \
+	--data-urlencode "wlan_ap_mac=" \
+	--data-urlencode "gw_id=" \
+	--data-urlencode "jsVersion=$JSVER" \
+	--data-urlencode "v=$RAND" \
+	--data-urlencode "lang=zh" 2>/dev/null)
+
+RCN=$(printf '%s' "$CFG" | sed -n 's/.*"rcn"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null | head -n1)
+LOGIN_METHOD=$(printf '%s' "$CFG" | sed -n 's/.*"login_method"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null | head -n1)
+[ -z "$LOGIN_METHOD" ] && LOGIN_METHOD="1"
+
+[ -n "$RCN" ] || die "门户没有返回 rcn（可能不在润泽校园网，或门户地址不对）：$(printf '%s' "$CFG" | cut -c1-300)" 1
+
+log "rcn=$RCN login_method=$LOGIN_METHOD"
+
+# ---------------- 4. 组装并登录 ----------------
+ACCOUNT="$PREFIX$USER$ISP"
+RAND=$(awk 'BEGIN{srand(); print int(rand()*10000)+500}')
+
+if [ "$MODE" = "legacy" ]; then
+	# 旧接口：明文参数，不需要 openssl
+	RESP=$(curl -s -m "$TIMEOUT" -A "$UA" -G "$BASE/drcom/login" \
+		--data-urlencode "callback=dr1" \
+		--data-urlencode "DDDDD=$USER$ISP" \
+		--data-urlencode "upass=$PASS" \
+		--data-urlencode "0MKKey=123456" \
+		--data-urlencode "R1=0" \
+		--data-urlencode "R2=" \
+		--data-urlencode "R3=0" \
+		--data-urlencode "R6=0" \
+		--data-urlencode "para=00" \
+		--data-urlencode "v6ip=" \
+		--data-urlencode "login_t=0" \
+		--data-urlencode "js_status=0" \
+		--data-urlencode "is_page=1" \
+		--data-urlencode "is_page_new=$RAND" \
+		--data-urlencode "terminal_type=1" \
+		--data-urlencode "lang=zh" \
+		--data-urlencode "rcn=$RCN" \
+		--data-urlencode "jsVersion=$JSVER" \
+		--data-urlencode "v=$RAND" 2>/dev/null)
+else
+	ACCOUNT_ESC=$(json_esc "$ACCOUNT")
+	PASS_ESC=$(json_esc "$PASS")
+	RCN_ESC=$(json_esc "$RCN")
+	JSON="{\"login_method\":\"$LOGIN_METHOD\",\"user_account\":\"$ACCOUNT_ESC\",\"user_password\":\"$PASS_ESC\",\"wlan_user_ip\":\"$WAN_IP\",\"wlan_user_ipv6\":\"\",\"wlan_user_mac\":\"$WAN_MAC\",\"wlan_ac_ip\":\"\",\"wlan_ac_name\":\"\",\"jsVersion\":\"$JSVER\",\"login_t\":\"0\",\"js_status\":\"0\",\"is_page\":\"1\",\"is_page_new\":$RAND,\"terminal_type\":1,\"lang\":\"zh\",\"rcn\":\"$RCN_ESC\"}"
+
+	if [ -n "$DEBUG" ] && [ "$DEBUG" != "0" ]; then
+		SAFE_JSON=$(printf '%s' "$JSON" | sed 's/"user_password":"[^"]*"/"user_password":"***"/')
+		log "JSON=$SAFE_JSON"
+	fi
+
+	PARAMS=$(printf '%s' "$JSON" | openssl enc -aes-128-ecb -K "$AES_KEY_HEX" -nosalt 2>/dev/null | openssl base64 -A 2>/dev/null)
+	[ -n "$PARAMS" ] || die "AES 加密失败（openssl 不支持 aes-128-ecb）" 1
+
+	RESP=$(curl -s -m "$TIMEOUT" -A "$UA" -G "$BASE:$EP_PORT/eportal/portal/login" \
+		--data-urlencode "callback=dr1" \
+		--data-urlencode "params=$PARAMS" \
+		--data-urlencode "jsVersion=$JSVER" \
+		--data-urlencode "v=$RAND" \
+		--data-urlencode "lang=zh" 2>/dev/null)
+fi
+
+if [ -n "$DEBUG" ] && [ "$DEBUG" != "0" ]; then
+	log "RESP=$RESP"
+fi
+
+if printf '%s' "$RESP" | grep -q '"result"[[:space:]]*:[[:space:]]*1'; then
+	note_state success "SUCCESS - Portal 协议认证成功" 0
+	exit 0
+fi
+
+MSG=$(printf '%s' "$RESP" | sed -n 's/.*"msg"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null | head -n1)
+[ -z "$MSG" ] && MSG=$(printf '%s' "$RESP" | sed -n 's/.*"msga"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null | head -n1)
+[ -z "$MSG" ] && MSG="门户返回异常（可能不在校园网，或账号密码不对）"
+
+note_state fail "FAILED - $MSG" 1
+exit 1
