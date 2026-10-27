@@ -96,6 +96,8 @@ start_ua3f() {
 	stop_ua2f
 	[ -x "$INIT/ua2f" ] && "$INIT/ua2f" disable >/dev/null 2>&1
 	[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" disable >/dev/null 2>&1
+	# 清掉 UA2F 侧可能残留的 TTL 表：和 UA3F 的 TTL 规则同优先级，留着会互相覆盖
+	nft delete table ip ua2f_ttl 2>/dev/null
 	uci -q set ua2f.enabled.enabled='0'
 	uci -q set ua3f.enabled.enabled='1'
 	uci -q commit ua2f
