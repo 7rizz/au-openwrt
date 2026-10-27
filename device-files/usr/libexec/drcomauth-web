@@ -1,0 +1,59 @@
+#!/bin/sh
+# ============================================================
+#  drcomauth-web -- LuCI 页面专用的小助手
+#
+#  只暴露固定动作，网页拿不到 shell：
+#    drcomauth-web test     后台强制跑一次登录，结果写到 TEST_LOG
+#    drcomauth-web clear    清空运行日志和测试日志
+#    drcomauth-web status   输出 status.json（调试用）
+#    drcomauth-web fixperm  把配置权限收紧到 600（LuCI 保存后调用）
+#
+#  测试日志最后一行是 EXIT=<退出码>，页面靠它判断跑完没有。
+# ============================================================
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+export PATH
+
+LOG_FILE="${DRCOM_LOG:-/tmp/drcom-auth.log}"
+TEST_LOG="${DRCOM_TEST_LOG:-/tmp/drcom-auth-test.log}"
+STATUS_FILE="${DRCOM_STATUS_FILE:-/tmp/drcomauth/status.json}"
+
+case "$1" in
+	test)
+		: >"$TEST_LOG" 2>/dev/null
+
+		if [ ! -x /usr/bin/drcom-auth ]; then
+			{
+				echo "ERROR: /usr/bin/drcom-auth 不存在或不可执行"
+				echo "EXIT=1"
+			} >"$TEST_LOG"
+			exit 0
+		fi
+
+		# 故意放到后台：HTTP 请求立刻返回，页面轮询结果文件，
+		# 这样登录慢也不会把 rpcd / uhttpd 拖到超时。
+		(
+			/usr/bin/drcom-auth --force >>"$TEST_LOG" 2>&1
+			echo "EXIT=$?" >>"$TEST_LOG"
+		) </dev/null >/dev/null 2>&1 &
+		;;
+	clear)
+		: >"$LOG_FILE" 2>/dev/null
+		: >"$TEST_LOG" 2>/dev/null
+		echo "cleared"
+		;;
+	status)
+		cat "$STATUS_FILE" 2>/dev/null || echo '{}'
+		;;
+	fixperm)
+		# LuCI 保存后确保密码文件只有 root 可读
+		chmod 600 /etc/config/drcomauth 2>/dev/null
+		echo "ok"
+		;;
+	*)
+		echo "usage: drcomauth-web test|clear|status|fixperm" >&2
+		exit 1
+		;;
+esac
+
+exit 0
