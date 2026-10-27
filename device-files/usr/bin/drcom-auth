@@ -105,6 +105,9 @@ USER=""
 PASS=""
 JSVER="4.X"
 TIMEOUT="8"
+# 只用于「是否已在线」的 204 探测：巡检间隔小的时候它必须短，
+# 否则一次探测能卡 8 秒，反应比间隔还慢。登录请求仍用 TIMEOUT。
+PROBE_TIMEOUT="3"
 WAN_IF=""
 MODE="aes"
 MAC_SOURCE="wan"
@@ -128,6 +131,7 @@ if [ -f "$UCI_CONF" ] && command -v uci >/dev/null 2>&1 && [ -n "$(uci_get usern
 	MODE=$(uci_get mode);       [ -z "$MODE" ] && MODE="aes"
 	MAC_SOURCE=$(uci_get mac_source); [ -z "$MAC_SOURCE" ] && MAC_SOURCE="wan"
 	ONLINE_URL=$(uci_get online_url); [ -z "$ONLINE_URL" ] && ONLINE_URL="http://connect.rom.miui.com/generate_204"
+	PROBE_TIMEOUT=$(uci_get probe_timeout); [ -z "$PROBE_TIMEOUT" ] && PROBE_TIMEOUT="3"
 	TIMEOUT=$(uci_get timeout); [ -z "$TIMEOUT" ] && TIMEOUT="8"
 	DEBUG=$(uci_get debug);     [ -z "$DEBUG" ] && DEBUG="0"
 else
@@ -215,7 +219,7 @@ WAN_IP=$(ip -4 addr show dev "$WAN_IF" 2>/dev/null | awk '/inet /{print $2; exit
 
 # ---------------- 2. 已在线就不重复登录 ----------------
 if [ "$FORCE" != "1" ]; then
-	if [ "$(http_code "$ONLINE_URL")" = "204" ]; then
+	if [ "$(curl -s -o /dev/null -m "$PROBE_TIMEOUT" -A "$UA" -w '%{http_code}' "$ONLINE_URL" 2>/dev/null)" = "204" ]; then
 		note_state online "ONLINE - 已在线，跳过登录" 0
 		exit 0
 	fi

@@ -1,15 +1,17 @@
 #!/bin/sh
 # Dr.COM 自动登录巡检循环：procd 负责拉起和守护本脚本。
-# 间隔从 UCI 读取，允许 10~3600 秒，默认 60 秒。
+# 间隔从 UCI 读取，允许 2~3600 秒，默认 10 秒。
+# 2 秒只适合临时排查：每次巡检会向门户发一个 204 探测请求，
+# 2 秒 = 一天 4 万多次，学校侧可能限流，长期用 10 秒就好。
 
 while :; do
 	/usr/bin/drcom-auth >/dev/null 2>&1
 
 	interval=$(uci -q get drcomauth.main.interval 2>/dev/null)
 	case "$interval" in
-		''|*[!0-9]*) interval=60 ;;
+		''|*[!0-9]*) interval=10 ;;
 	esac
-	[ "$interval" -lt 10 ] 2>/dev/null && interval=10
+	[ "$interval" -lt 2 ] 2>/dev/null && interval=2
 	[ "$interval" -gt 3600 ] 2>/dev/null && interval=3600
 
 	sleep "$interval"

@@ -422,7 +422,7 @@ return view.extend({
 		var intervalInput = E('input', {
 			'type': 'text', 'class': 'cbi-input-text', 'style': 'width:6em'
 		}, '');
-		intervalInput.value = cfg('interval', '60');
+		intervalInput.value = cfg('interval', '10');
 
 		var modeSelect = E('select', { 'class': 'cbi-input-select' }, [
 			E('option', { 'value': 'aes' }, _('AES 加密（和门户一致，推荐）')),
@@ -478,8 +478,8 @@ return view.extend({
 				return;
 			}
 
-			if (!/^\d+$/.test(iv) || parseInt(iv, 10) < 10 || parseInt(iv, 10) > 3600) {
-				notify(_('巡检间隔必须是 10~3600 的整数（秒）。'));
+			if (!/^\d+$/.test(iv) || parseInt(iv, 10) < 2 || parseInt(iv, 10) > 3600) {
+				notify(_('巡检间隔必须是 2~3600 的整数（秒）。'));
 				return;
 			}
 
@@ -695,7 +695,7 @@ return view.extend({
 				E('div', { 'class': 'cbi-value-field' }, [
 					intervalInput, _(' 秒'),
 					E('div', { 'class': 'cbi-value-description' },
-						_('10~3600 秒，默认 60'))
+						_('2~3600 秒，默认 10；填 2 反应最快，但会更频繁地探测门户'))
 				])
 			]),
 			E('div', { 'class': 'cbi-value' }, [
