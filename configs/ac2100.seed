@@ -86,6 +86,7 @@ CONFIG_PACKAGE_luci-app-ttyd=y           # 网页终端
 CONFIG_PACKAGE_luci-app-commands=y       # 自定义命令按钮
 CONFIG_PACKAGE_openssh-sftp-server=y     # 方便用 WinSCP 传文件
 CONFIG_PACKAGE_curl=y
+CONFIG_PACKAGE_openssl-util=y          # 润泽公寓 Dr.COM 登录要用 aes-128-ecb
 CONFIG_PACKAGE_htop=y
 CONFIG_PACKAGE_nano=y
 CONFIG_PACKAGE_iperf3=y
