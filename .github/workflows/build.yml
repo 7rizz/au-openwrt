@@ -155,6 +155,7 @@ jobs:
           find openwrt/files -type f -exec chmod 0644 {} +
           chmod 0755 openwrt/files/etc/init.d/*   2>/dev/null || true
           chmod 0755 openwrt/files/etc/uci-defaults/* 2>/dev/null || true
+          chmod 0755 openwrt/files/etc/hotplug.d/iface/* 2>/dev/null || true
           chmod 0755 openwrt/files/usr/bin/*      2>/dev/null || true
           chmod 0755 openwrt/files/usr/sbin/*     2>/dev/null || true
           chmod 0755 openwrt/files/usr/libexec/*  2>/dev/null || true
