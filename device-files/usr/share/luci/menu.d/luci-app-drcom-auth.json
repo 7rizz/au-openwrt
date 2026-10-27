@@ -1,0 +1,13 @@
+{
+	"admin/services/drcomauth": {
+		"title": "润泽公寓自动登录",
+		"order": 61,
+		"action": {
+			"type": "view",
+			"path": "drcomauth"
+		},
+		"depends": {
+			"acl": [ "luci-app-drcom-auth" ]
+		}
+	}
+}
