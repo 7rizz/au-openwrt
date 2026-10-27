@@ -1,0 +1,25 @@
+{
+	"luci-app-drcom-auth": {
+		"description": "润泽公寓 Dr.COM 自动登录：账号配置、服务启停、测试登录、日志",
+		"read": {
+			"file": {
+				"/etc/config/drcomauth": [ "read" ],
+				"/tmp/drcomauth/status.json": [ "read" ],
+				"/tmp/drcom-auth.log": [ "read" ],
+				"/tmp/drcom-auth-test.log": [ "read" ],
+				"/etc/init.d/drcomauth": [ "exec" ],
+				"/usr/libexec/drcomauth-web": [ "exec" ]
+			},
+			"ubus": {
+				"service": [ "list" ]
+			},
+			"uci": [ "drcomauth" ]
+		},
+		"write": {
+			"file": {
+				"/etc/config/drcomauth": [ "write" ]
+			},
+			"uci": [ "drcomauth" ]
+		}
+	}
+}
