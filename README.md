@@ -66,7 +66,7 @@
 
 ## 三、固件里装了什么
 
-**校园网防检测**：**UA2F 4.10.2**（主引擎，NFQUEUE :10010，改 UA，TTL 由 ua2f-ttl 用 nft 固定）；**UA3F 3.7.0**（备引擎，TPROXY :1080，改 UA + 固定 TTL + 清 TCP 时间戳 + IPID 归零，页面在「服务 → UA3F」）；UA2F 4.10.2（备引擎，默认关闭，`ua-engine ua2f` 可切换，两者互斥）
+**校园网防检测**：**UA2F 4.10.2**（主引擎，NFQUEUE :10010，改 UA，TTL 由 ua2f-ttl 用 nft 固定）；**UA-Mask 0.4.3**（第三引擎，REDIRECT 只接管 80，最省 CPU，需配 ua2f-ttl 补 TTL，默认关）；**UA3F 3.7.0**（备引擎，TPROXY :1080，改 UA + 固定 TTL + 清 TCP 时间戳 + IPID 归零，页面在「服务 → UA3F」）；UA2F 4.10.2（备引擎，默认关闭，`ua-engine ua2f` 可切换，两者互斥）
 **自己写的四个页面**（都在「服务」菜单）：**防检测引擎**（排第一，UA3F/UA2F 启停与档位控制台）、UA3F 防检测（详细设置）、连接设备、WAN MAC 工具
 **自动登录 / 探测**：顺枫公寓自动登录（netcheck）、认证门户探测（portal-probe）
 **科学上网（三种任选，默认都不自动启动）**：OpenClash、PassWall、SSR-Plus
