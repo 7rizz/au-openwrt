@@ -1,5 +1,5 @@
 #!/bin/sh
-# UA2F 面板后端 v2 by au学长 V：aauuo0 —— 只有白名单动作，网页拿不到 shell
+# UA2F 面板后端 v2 by au VX：aauuo0 —— 只有白名单动作，网页拿不到 shell
 PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH; export PATH
 
 UA_WINDOWS='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'

@@ -30,7 +30,7 @@ uci set system.ntp.enable_server='1'
 # 1b. 固件显示名（LuCI「状态 → 概况」里的「固件版本」那一行）
 #     改名字的话，这里和 /etc/init.d/personal-branding 要一起改
 # ---------------------------------------------------------------
-FW_NAME='by au学长 v：aauuo0 倒卖司马'
+FW_NAME='by au VX：aauuo0 倒卖司马'
 if [ -f /etc/openwrt_release ]; then
 	sed -i "s|^DISTRIB_DESCRIPTION=.*|DISTRIB_DESCRIPTION='$FW_NAME'|" /etc/openwrt_release
 fi
@@ -120,10 +120,10 @@ fi
 
 # ---------------------------------------------------------------
 # 6. 校园网防检测 + 自动登录（组件已内置在固件里，这里只负责开机启用）
-#    默认引擎 = UA3F（TPROXY 0.0.0.0:1080），参数在 /etc/config/ua3f，
-#    页面在 LuCI「服务 → UA3F 防检测」。
-#    UA2F 留在固件里但默认关闭：两个引擎会抢同一份出站流量，
-#    切换用 ua-engine ua3f / ua-engine ua2f / ua-engine off。
+#    默认引擎 = UA2F（NFQUEUE 10010，只改写 HTTP 的 UA）+ ua2f-ttl（nft 固定 TTL 128），
+#    参数在 /etc/config/ua2f，页面在 LuCI「服务 → UA2F 防检测」。
+#    UA3F 留在固件里但默认关闭：它用 TPROXY 全量接管 TCP，开销大、排查问题时再切。
+#    切换用 ua-engine ua2f / ua-engine ua3f / ua-engine off。
 # ---------------------------------------------------------------
 # mwan3 和 UA 引擎抢同一套 fwmark/ip rule：两个都开，TPROXY 会直接失效。
 # full 版会装上 mwan3（多拨），这里默认停掉；真要用多拨就先 ua-engine off。
@@ -131,14 +131,16 @@ if [ -x /etc/init.d/mwan3 ]; then
 	/etc/init.d/mwan3 stop    >/dev/null 2>&1
 	/etc/init.d/mwan3 disable >/dev/null 2>&1
 fi
-if [ -x /etc/init.d/ua2f ]; then
-	/etc/init.d/ua2f stop    >/dev/null 2>&1
-	/etc/init.d/ua2f disable >/dev/null 2>&1
+# UA3F 关掉（备引擎，默认不跑）
+if [ -x /etc/init.d/ua3f ]; then
+	/etc/init.d/ua3f stop    >/dev/null 2>&1
+	/etc/init.d/ua3f disable >/dev/null 2>&1
 fi
-[ -x /etc/init.d/ua2f-ttl ] && /etc/init.d/ua2f-ttl stop >/dev/null 2>&1
 # 只 enable，不当场 start：这一步还在 boot 里跑，等 network/firewall 就绪后
 # rcS 会按 /etc/rc.d 的顺序把它拉起来（同一个开机过程内就生效）
-[ -x /etc/init.d/ua3f ] && /etc/init.d/ua3f enable >/dev/null 2>&1
+# UA2F + ua2f-ttl 一起启用：UA2F 只改 UA，TTL 由 ua2f-ttl 用 nft 固定
+[ -x /etc/init.d/ua2f ]     && /etc/init.d/ua2f enable     >/dev/null 2>&1
+[ -x /etc/init.d/ua2f-ttl ] && /etc/init.d/ua2f-ttl enable >/dev/null 2>&1
 # 崩溃取证：panic / OOM / 卡死 / 无线驱动错误都写进 /root/crash.log（重启不丢）
 [ -x /etc/init.d/crashlog ] && /etc/init.d/crashlog enable
 

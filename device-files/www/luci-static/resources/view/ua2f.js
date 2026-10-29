@@ -5,7 +5,7 @@
 'require ui';
 
 /*
- * 「服务 → UA2F 防检测」原生 JS 页面        by au学长 V：aauuo0
+ * 「服务 → UA2F 防检测」原生 JS 页面        by au VX：aauuo0
  *
  * 原来的实现是一个 iframe 套 /cgi-bin/ua2f；这里改成直接调 /usr/libexec/ua2f-web
  * （白名单动作，ACL 早已授权），界面统一成和「防检测引擎」一样的卡片风格。
@@ -15,7 +15,7 @@
 
 var HELPER = '/usr/libexec/ua2f-web';
 var LOAD_ERR = null;
-var WM = '作者：au学长 V：aauuo0';
+var WM = 'by：au VX：aauuo0';
 
 var PERSONAS = [
 	{ id: 'windows', label: '电脑 Windows', ttl: 128 },
@@ -102,7 +102,7 @@ return view.extend({
 		/* ---- 状态卡片 ---- */
 		var card = E('div', { 'class': 'card', 'id': 'u2-card' }, [
 			E('div', { 'class': 'head' }, [
-				E('div', { 'class': 'name' }, ['UA2F', E('span', { 'class': 'tag' }, '备引擎 · 只改 UA')]),
+				E('div', { 'class': 'name' }, ['UA2F', E('span', { 'class': 'tag' }, '主引擎 · 只改 UA')]),
 				E('span', { 'class': 'pill off', 'id': 'u2-state' }, '读取中…')
 			]),
 			E('div', { 'class': 'rows' }, [

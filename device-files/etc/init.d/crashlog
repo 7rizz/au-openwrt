@@ -1,5 +1,5 @@
 #!/bin/sh /etc/rc.common
-# 崩溃取证服务（只写关键日志行到 /root/crash.log）  by au学长 V：aauuo0
+# 崩溃取证服务（只写关键日志行到 /root/crash.log）  by au VX：aauuo0
 START=98
 USE_PROCD=1
 

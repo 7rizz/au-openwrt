@@ -1,6 +1,6 @@
 /* =====================================================================
    UA3F 页面美化层 · 只做装饰，不碰任何表单/接口
-   by au学长 V：aauuo0
+   by au VX：aauuo0
 
    安全策略：
      · 只在「服务 → UA3F」这一页生效（找不到 .cbi-map 或标题不是 UA3F 就直接退出）
@@ -10,7 +10,7 @@
 (function () {
 	'use strict';
 
-	var AUTHOR = '作者：au学长 V：aauuo0';
+	var AUTHOR = 'by：au VX：aauuo0';
 	var ACCENT = '#5e72e4';
 
 	function qs(sel, root) {
@@ -76,7 +76,7 @@
 
 	function addBadge(h2) {
 		if (qs('.ua3f-badge', h2)) { return; }
-		h2.appendChild(el('span', 'ua3f-badge', '主引擎'));
+		h2.appendChild(el('span', 'ua3f-badge', '备引擎'));
 	}
 
 	function addScrollTop() {

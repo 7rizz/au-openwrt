@@ -8,7 +8,7 @@
 START=19
 STOP=90
 
-FW_NAME='by au学长 v：aauuo0 倒卖司马'
+FW_NAME='by au VX：aauuo0 倒卖司马'
 
 start() {
 	[ -f /etc/openwrt_release ] || exit 0

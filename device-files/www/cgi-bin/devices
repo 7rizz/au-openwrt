@@ -1,5 +1,5 @@
 #!/bin/sh
-# 连接设备列表 v3（局部刷新 + 搜索排序 + 备注免跳转）  by au学长 V：aauuo0
+# 连接设备列表 v3（局部刷新 + 搜索排序 + 备注免跳转）  by au VX：aauuo0
 #
 # 相对 v2 的改动：
 #   1. 页面只加载一次，之后每 N 秒用 fetch 只换 <tbody>（滚动位置、搜索词都不丢）
@@ -286,11 +286,11 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#b9c4d6}
   td::before{content:attr(data-k);color:var(--dim);font-size:12px;min-width:52px}
 }
 </style></head><body>
-<div class="wm">作者：au学长 V：aauuo0</div>
-<div class="wmc">作者：au学长 V：aauuo0</div>
+<div class="wm">by：au VX：aauuo0</div>
+<div class="wmc">by：au VX：aauuo0</div>
 
 <h2>连接设备 <span class="tag">实时</span></h2>
-<p class="sub">作者：au学长 V：aauuo0　·　类型为粗判，仅供参考</p>
+<p class="sub">by：au VX：aauuo0　·　类型为粗判，仅供参考</p>
 
 <div class="bar">
   <input type="search" id="q" placeholder="搜索 名称 / IP / MAC …">

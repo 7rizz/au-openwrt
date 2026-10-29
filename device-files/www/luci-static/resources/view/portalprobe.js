@@ -149,10 +149,10 @@ return view.extend({
 
 		return E('div', { 'class': 'cbi-map au-page' }, [
 			E('link', { 'rel': 'stylesheet', 'href': '/luci-static/resources/au/ui.css' }),
-			E('div', { 'class': 'au-wm' }, '作者：au学长 V：aauuo0'),
-			E('div', { 'class': 'au-wmc' }, '作者：au学长 V：aauuo0'),
+			E('div', { 'class': 'au-wm' }, 'by：au VX：aauuo0'),
+			E('div', { 'class': 'au-wmc' }, 'by：au VX：aauuo0'),
 			E('h2', {}, _('认证门户探测')),
-			E('div', { 'style': 'margin:2px 0 10px' }, [E('span', { 'class': 'au-tag' }, '作者：au学长 V：aauuo0')]),
+			E('div', { 'style': 'margin:2px 0 10px' }, [E('span', { 'class': 'au-tag' }, 'by：au VX：aauuo0')]),
 			probeSection,
 			capSection,
 			outSection

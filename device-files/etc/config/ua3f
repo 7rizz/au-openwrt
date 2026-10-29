@@ -5,8 +5,10 @@
 #  和 UA2F 二选一，用 ua-engine ua3f|ua2f|off 切换
 # =====================================================================
 
+# 默认关闭：主引擎已换成 UA2F（NFQUEUE 只改 UA + nft 固定 TTL，开销最小）
+# 要切回来：ua-engine ua3f
 config 'ua3f' 'enabled'
-	option enabled '1'
+	option enabled '0'
 
 config 'ua3f' 'main'
 	# 透明代理模式：TPROXY（保留原始目的地址，最适合网关）

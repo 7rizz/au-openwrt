@@ -1,6 +1,6 @@
 #!/bin/sh
 # =====================================================================
-#  万能校园网认证门户探测 v2      by au学长 V：aauuo0
+#  万能校园网认证门户探测 v2      by au VX：aauuo0
 #  覆盖：深澜 srun / Dr.COM eportal / 锐捷 Ruijie / H3C / 城市热点 / 华为 / 未知通用
 #  用法： portal-probe probe      探测并生成报告 + 登录命令模板
 #         portal-probe show       看上次报告    portal-probe clear  清空

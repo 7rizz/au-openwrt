@@ -5,7 +5,7 @@
 'require ui';
 
 /*
- * 「服务 → 防检测引擎」控制台                by au学长 V：aauuo0
+ * 「服务 → 防检测引擎」控制台                by au VX：aauuo0
  *
  * 干三件事：看状态、启停 UA3F/UA2F、一键换认证人格（UA + TTL 成套换）。
  * 互斥和人格同步全在后端 /usr/libexec/ua-engine-web 里，这里只管按按钮和显示。
@@ -56,6 +56,7 @@ var CSS = [
 	'.ua-engine-row .v{flex:1;word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:12px}',
 	'.ua-engine-actions{display:flex;flex-wrap:wrap;gap:8px}',
 	'.ua-engine-actions .cbi-button{min-width:76px}',
+	'.ua-engine-hint{font-size:11.5px;opacity:.55;margin-top:6px;line-height:1.6}',
 	'.ua-engine-foot{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid rgba(128,146,184,.18)}',
 	'.ua-engine-foot .note{font-size:12px;opacity:.55}',
 	'.ua-engine-page button[disabled]{opacity:.45;cursor:not-allowed;transform:none!important}',
@@ -91,7 +92,7 @@ function shortUA(ua) {
 }
 
 /* 水印：和其它页面同款（斜排大字 + 右下角小字），只挂在本页 */
-var WM_TEXT = '作者：au学长 V：aauuo0';
+var WM_TEXT = 'by：au VX：aauuo0';
 
 function ensureWatermark(host) {
 	var parent = host || document.body;
@@ -166,13 +167,17 @@ return view.extend({
 		this.st = data || {};
 		this.busy = false;
 
-		var ua3fCard = this.buildCard('ua3f', 'UA3F', '主引擎 · 改 UA + TTL',
+		var ua3fCard = this.buildCard('ua3f', 'UA3F', '备引擎 · 改 UA + TTL',
 			'TPROXY 透明代理，把所有设备的浏览器 UA 统一、固定出站 TTL。规则和详细参数在「服务 → UA3F 防检测」。',
 			[['模式', 'mode'], ['端口', 'port'], ['TTL', 'ttl'], ['L3 附加', 'l3'], ['当前 UA', 'ua']]);
 
-		var ua2fCard = this.buildCard('ua2f', 'UA2F', '备引擎 · 只改 UA',
+		var ua2fCard = this.buildCard('ua2f', 'UA2F', '主引擎 · 只改 UA',
 			'内核态 NFQUEUE，只处理 HTTP，开销小；不做 IPID / TCP 时间戳。人格跟着上面一起变。',
 			[['模式', 'mode'], ['端口', 'port'], ['TTL', 'ttl'], ['当前 UA', 'ua']]);
+
+		var umCard = this.buildCard('um', 'UA-Mask', '轻量 · 只改 UA',
+			'REDIRECT 架构，只接管 80 端口（443/22 直接放过），CPU 更省。它不含 TTL 改写，启动时会自动用 ua2f-ttl 补上 TTL。需先装 UAmask_*.ipk。',
+			[['端口', 'port'], ['TTL', 'ttl'], ['当前 UA', 'ua']]);
 
 		var msg = E('div', { 'class': 'ua-engine-msg', 'id': 'ue-msg' }, '');
 		var warn = E('div', { 'class': 'ua-engine-warn', 'id': 'ue-warn' },
@@ -186,7 +191,7 @@ return view.extend({
 			warn,
 			msg,
 			this.buildPersona(),
-			E('div', { 'class': 'ua-engine-cards' }, [ua3fCard, ua2fCard]),
+			E('div', { 'class': 'ua-engine-cards' }, [ua3fCard, ua2fCard, umCard]),
 			E('div', { 'class': 'ua-engine-foot' }, [
 				E('button', {
 					'class': 'cbi-button cbi-button-negative', 'id': 'ue-stop-all',
@@ -228,6 +233,20 @@ return view.extend({
 				'class': 'cbi-button cbi-button-reset', 'id': 'ue-ua2f-stop',
 				'click': function () { self.doAction('stop', 'ua2f'); }
 			}, '停止'));
+		}
+
+		var am = root.querySelector('#ue-um-actions');
+		if (am) {
+			am.appendChild(E('button', {
+				'class': 'cbi-button cbi-button-apply', 'id': 'ue-um-start',
+				'click': function () { self.doAction('start', 'uamask'); }
+			}, '启动 UA-Mask'));
+			am.appendChild(E('button', {
+				'class': 'cbi-button cbi-button-reset', 'id': 'ue-um-stop',
+				'click': function () { self.doAction('stop', 'uamask'); }
+			}, '停止'));
+			am.appendChild(E('div', { 'class': 'ua-engine-hint', 'id': 'ue-um-hint' },
+				'没装的话：把 UAmask_*.ipk 传到 /tmp，然后 opkg install /tmp/UAmask_*.ipk'));
 		}
 
 		this.applyStatus(this.st);
@@ -319,10 +338,28 @@ return view.extend({
 		var warn = $('ue-warn');
 		if (warn) { warn.className = 'ua-engine-warn' + (st.conflict === '1' ? ' show' : ''); }
 
+		var runUm = st.uamask_running === '1';
+		var installed = st.uamask_installed === '1';
+		var pu = $('ue-um-state');
+		if (pu) {
+			pu.textContent = runUm ? '运行中'
+				: (!installed ? '未安装'
+				: (st.uamask_enabled === '1' ? '已停止（自启中）' : '已停止'));
+			pu.className = 'ua-engine-pill ' + (runUm ? 'on' : 'off');
+		}
+		var cu = $('ue-card-um'); if (cu) { cu.className = 'ua-engine-card' + (runUm ? ' active' : ''); }
+		set('ue-um-port', st.uamask_port || '—');
+		set('ue-um-ttl', st.uamask_ttl === '1' ? ('固定 ' + (st.uamask_ttl_value || '?')) : '未启用');
+		set('ue-um-ua', shortUA(st.uamask_ua));
+		var nu = $('ue-um-ua'); if (nu && st.uamask_ua) { nu.title = st.uamask_ua; }
+		var hu = $('ue-um-hint'); if (hu) { hu.style.display = installed ? 'none' : ''; }
+
 		var b3s = $('ue-ua3f-start'); if (b3s) { b3s.disabled = this.busy || run3; }
 		var b3t = $('ue-ua3f-stop'); if (b3t) { b3t.disabled = this.busy || !run3; }
 		var b2s = $('ue-ua2f-start'); if (b2s) { b2s.disabled = this.busy || run2; }
 		var b2t = $('ue-ua2f-stop'); if (b2t) { b2t.disabled = this.busy || !run2; }
+		var bus = $('ue-um-start'); if (bus) { bus.disabled = this.busy || runUm || !installed; }
+		var but = $('ue-um-stop'); if (but) { but.disabled = this.busy || !runUm; }
 	},
 
 	notify: function (text, kind) {

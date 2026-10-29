@@ -772,8 +772,8 @@ return view.extend({
 
 		return E('div', { 'class': 'cbi-map au-page' }, [
 			E('link', { 'rel': 'stylesheet', 'href': '/luci-static/resources/au/ui.css' }),
-			E('div', { 'class': 'au-wm' }, '作者：au学长 V：aauuo0'),
-			E('div', { 'class': 'au-wmc' }, '作者：au学长 V：aauuo0'),
+			E('div', { 'class': 'au-wm' }, 'by：au VX：aauuo0'),
+			E('div', { 'class': 'au-wmc' }, 'by：au VX：aauuo0'),
 			E('h2', {}, _('润泽公寓自动登录（Dr.COM 哆点）')),
 			E('div', { 'class': 'cbi-map-descr' }, _('账号为空时不会登录；掉线后自动重登。')),
 			statusSection,

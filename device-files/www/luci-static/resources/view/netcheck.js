@@ -7,7 +7,7 @@
 
 /* ------------------------------------------------------------------
  * LuCI page for netcheck -- 湖南工学院顺枫公寓自动登录插件
- *   作者：au学长    V：aauuo0
+ *   by：au VX：aauuo0
  *
  *   - start / stop / restart the daemon, show its state
  *   - change USERNAME / PASSWORD in /etc/auth.conf
@@ -25,7 +25,7 @@ var TEST_LOG  = '/tmp/netcheck_test.log';
 var HELPER    = '/usr/libexec/netcheck-web';
 
 var BRAND_LINE1 = '湖南工学院顺枫公寓自动登录插件';
-var BRAND_LINE2 = '作者：au学长    V：aauuo0';
+var BRAND_LINE2 = 'by：au VX：aauuo0';
 
 var callServiceList = rpc.declare({
 	object: 'service',
@@ -542,8 +542,8 @@ return view.extend({
 
 		return E('div', { 'class': 'cbi-map au-page' }, [
 			E('link', { 'rel': 'stylesheet', 'href': '/luci-static/resources/au/ui.css' }),
-			E('div', { 'class': 'au-wm' }, '作者：au学长 V：aauuo0'),
-			E('div', { 'class': 'au-wmc' }, '作者：au学长 V：aauuo0'),
+			E('div', { 'class': 'au-wm' }, 'by：au VX：aauuo0'),
+			E('div', { 'class': 'au-wmc' }, 'by：au VX：aauuo0'),
 			E('h2', {}, BRAND_LINE1),
 			E('div', { 'class': 'cbi-map-descr' }, [
 				BRAND_LINE2,

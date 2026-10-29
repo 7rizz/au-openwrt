@@ -1,7 +1,7 @@
 #!/bin/sh
 # ================================================================
 # netcheck-web -- helper for the LuCI page (package luci-app-netcheck)
-#     湖南工学院顺枫公寓自动登录插件   作者：au学长   V：aauuo0
+#     湖南工学院顺枫公寓自动登录插件   by：au VX：aauuo0
 #
 #   netcheck-web test     run auth.sh in the background and capture
 #                         its output in /tmp/netcheck_test.log

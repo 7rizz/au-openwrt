@@ -1,6 +1,6 @@
 #!/bin/sh
 # =====================================================================
-#  偶发「没网几秒」抓现场   sh /root/flap-watch.sh [分钟]   by au学长 V：aauuo0
+#  偶发「没网几秒」抓现场   sh /root/flap-watch.sh [分钟]   by au VX：aauuo0
 #
 #  只读，不改配置。断线后把 /tmp/flap.log 发出来。
 #

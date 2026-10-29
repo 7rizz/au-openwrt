@@ -1,5 +1,5 @@
 #!/bin/sh
-# WAN MAC 工具（应急用）：随机化 / 恢复 / 自定义   by au学长 V：aauuo0
+# WAN MAC 工具（应急用）：随机化 / 恢复 / 自定义   by au VX：aauuo0
 O=/etc/mac-orig
 WANDEV="$(uci -q get network.wan.device)"; [ -n "$WANDEV" ] || WANDEV="$(ip route show default 2>/dev/null | awk '/^default/{print $5;exit}')"
 curmac() { ip link show "$WANDEV" 2>/dev/null | awk '/link\/ether/{print $2;exit}'; }
@@ -47,7 +47,7 @@ button{background:linear-gradient(135deg,#5e72e4,#483d8b);color:#fff;border:0;bo
 .wmc{position:fixed;right:14px;bottom:8px;z-index:9;font-size:12px;pointer-events:none;user-select:none;color:rgba(128,140,168,.55)}
 </style></head><body>
 <h2>WAN MAC 工具 <span class="tag">只改 WAN 口</span></h2>
-<p class="sub">作者：au学长 V：aauuo0</p>
+<p class="sub">by：au VX：aauuo0</p>
 <div class="warn"><b>先读这段再用：</b><br>
 · 只影响<b>路由器 WAN 口</b>的 MAC（学校能看到的就是它）；内网设备 MAC 学校看不到。<br>
 · 改完会<b>断网 10~30 秒</b>并需要重新认证；同一账号频繁换 MAC 在学校侧看<b>更像异常</b>，可能触发风控。<br>
@@ -70,7 +70,7 @@ cat <<'EOF'
 <h3>指定一个 MAC</h3>
 <form method="get"><input name="m" placeholder="02:11:22:33:44:55"><input type="hidden" name="a" value="apply"><button type="submit">应用</button></form>
 <p style="color:#889;font-size:12.5px">格式：六组十六进制，冒号分隔。建议第一字节用 02/06/0A/0E 之类（本地管理地址，避免和真实厂商段冲突）。</p>
-<div class="wm">作者：au学长 V：aauuo0</div>
-<div class="wmc">作者：au学长 V：aauuo0</div>
+<div class="wm">by：au VX：aauuo0</div>
+<div class="wmc">by：au VX：aauuo0</div>
 </body></html>
 EOF

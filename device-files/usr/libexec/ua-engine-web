@@ -1,11 +1,11 @@
 #!/bin/sh
 # =====================================================================
 #  /usr/libexec/ua-engine-web   ——「防检测引擎」页面的后端助手
-#  by au学长 V：aauuo0
+#  by au VX：aauuo0
 #
 #  固定动作（网页拿不到 shell）：
 #      status                          输出 key=value 状态
-#      start  ua3f|ua2f                启动（会先停掉另一个）
+#      start  ua3f|ua2f|uamask         启动（会先停掉另外两个）
 #      stop   ua3f|ua2f|all            停止
 #      mode   fast                     UA3F 只有速度档（只 TTL），这个动作是把它复位
 #      persona windows|iphone|android|mac
@@ -27,6 +27,8 @@ UA_ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, 
 UA_MAC='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15'
 
 running() { pgrep -f "/usr/bin/$1" >/dev/null 2>&1 && echo 1 || echo 0; }
+# UA-Mask 的可执行文件名是大写 UAmask
+running_um() { pgrep -f "/usr/bin/UAmask" >/dev/null 2>&1 && echo 1 || echo 0; }
 enabled() { [ -x "$INIT/$1" ] && "$INIT/$1" enabled >/dev/null 2>&1 && echo 1 || echo 0; }
 cfg()     { uci -q get "$1" 2>/dev/null; }
 
@@ -64,7 +66,19 @@ status() {
 	echo "ua2f_persona=$(cfg ua2f.main.persona)"
 	echo "ua2f_ua=$(cfg ua2f.main.custom_ua)"
 
-	if [ "$r3" = "1" ] && [ "$r2" = "1" ]; then echo "conflict=1"; else echo "conflict=0"; fi
+	echo "uamask_installed=$([ -x /usr/bin/UAmask ] && echo 1 || echo 0)"
+	echo "uamask_running=$(running_um)"
+	echo "uamask_enabled=$(enabled UAmask)"
+	echo "uamask_ua=$(cfg UAmask.main.ua)"
+	echo "uamask_port=$(cfg UAmask.main.port)"
+	echo "uamask_ttl=$(nft list table ip ua2f_ttl >/dev/null 2>&1 && echo 1 || echo 0)"
+	echo "uamask_ttl_value=$(nft list chain ip ua2f_ttl postrouting 2>/dev/null | sed -n 's/.*ip ttl set \([0-9]*\).*/\1/p' | head -n1)"
+
+	rm_="$r3$r2$(running_um)"
+	case "$rm_" in
+		*1*1*) echo "conflict=1" ;;
+		*)     echo "conflict=0" ;;
+	esac
 	echo "now=$(date +%s)"
 }
 
@@ -92,7 +106,59 @@ stop_ua2f() {
 	sleep 1
 }
 
+stop_uamask() {
+	[ -x "$INIT/UAmask" ] && "$INIT/UAmask" stop >/dev/null 2>&1
+	sleep 1
+}
+
+# UA-Mask 只改 UA，不碰 TTL，所以 TTL 交给 ua2f-ttl 这个独立服务（它不依赖 UA2F 本体）
+ttl_for_uamask() {
+	local ttl="$1"
+	[ -n "$ttl" ] || ttl=128
+	uci -q set ua2f.main.fix_ttl='1'
+	uci -q set ua2f.main.fix_ttl_value="$ttl"
+	uci -q commit ua2f
+	[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" enable >/dev/null 2>&1
+	[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" restart >/dev/null 2>&1
+	nft list table ip ua2f_ttl >/dev/null 2>&1 || {
+		nft add table ip ua2f_ttl 2>/dev/null
+		nft 'add chain ip ua2f_ttl postrouting { type filter hook postrouting priority mangle; }' 2>/dev/null
+		nft flush chain ip ua2f_ttl postrouting 2>/dev/null
+		nft add rule ip ua2f_ttl postrouting ip ttl set "$ttl" 2>/dev/null
+	}
+}
+
+start_uamask() {
+	local ua ttl
+	stop_ua3f
+	stop_ua2f
+	[ -x "$INIT/ua3f" ] && "$INIT/ua3f" disable >/dev/null 2>&1
+	[ -x "$INIT/ua2f" ] && "$INIT/ua2f" disable >/dev/null 2>&1
+	uci -q set ua3f.enabled.enabled='0'
+	uci -q set ua2f.enabled.enabled='0'
+	uci -q commit ua3f
+	uci -q commit ua2f
+
+	# UA 用当前人格的 UA；端口/接口/绕过项保持它自己的默认（22 443 不接管）
+	ua="$(cfg ua3f.main.ua)"
+	[ -n "$ua" ] || ua="$UA_WINDOWS"
+	uci -q set UAmask.main.ua="$ua"
+	uci -q set UAmask.enabled.enabled='1'
+	[ -n "$(cfg UAmask.main.bypass_ports)" ] || uci -q set UAmask.main.bypass_ports='22 443'
+	[ -n "$(cfg UAmask.main.port)" ] || uci -q set UAmask.main.port='12032'
+	uci -q commit UAmask
+
+	ttl="$(cfg ua3f.main.l3_rewrite_ttl_value)"
+	ttl_for_uamask "$ttl"
+
+	[ -x "$INIT/UAmask" ] && "$INIT/UAmask" enable >/dev/null 2>&1
+	[ -x "$INIT/UAmask" ] && "$INIT/UAmask" restart >/dev/null 2>&1
+	sleep 1
+	echo "msg=UA-Mask 已启动（UA3F/UA2F 已停止；TTL 固定由 ua2f-ttl 负责）"
+}
+
 start_ua3f() {
+	stop_uamask
 	stop_ua2f
 	[ -x "$INIT/ua2f" ] && "$INIT/ua2f" disable >/dev/null 2>&1
 	[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" disable >/dev/null 2>&1
@@ -109,6 +175,7 @@ start_ua3f() {
 }
 
 start_ua2f() {
+	stop_uamask
 	stop_ua3f
 	[ -x "$INIT/ua3f" ] && "$INIT/ua3f" disable >/dev/null 2>&1
 	uci -q set ua3f.enabled.enabled='0'
@@ -177,6 +244,10 @@ set_persona() {
 	swap_rules "$ua"
 	uci -q commit ua3f
 
+	# ---- UA-Mask：只同步 UA；TTL 由 ua2f-ttl 负责 ----
+	uci -q set UAmask.main.ua="$ua"
+	uci -q commit UAmask
+
 	# ---- UA2F：人格 + UA 同步（TTL 由 ua2f-ttl 按人格推导）----
 	uci -q set ua2f.main.persona="$name"
 	uci -q set ua2f.main.custom_ua="$ua"
@@ -193,6 +264,12 @@ set_persona() {
 		[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" restart >/dev/null 2>&1
 		sleep 1
 	fi
+	# UA-Mask 在跑：改完 UA 要重启它；TTL 换成新人格的值
+	if [ "$(running_um)" = "1" ]; then
+		[ -x "$INIT/UAmask" ] && "$INIT/UAmask" restart >/dev/null 2>&1
+		ttl_for_uamask "$ttl"
+		sleep 1
+	fi
 
 	echo "msg=人格已切到 $name：UA 和 TTL=$ttl 同时生效（UA3F + UA2F 都同步了）"
 	return 0
@@ -207,6 +284,11 @@ start)
 	case "$2" in
 	ua3f) [ -x "$INIT/ua3f" ] || { echo "msg=UA3F 未安装"; status; exit 0; }; start_ua3f ;;
 	ua2f) [ -x "$INIT/ua2f" ] || { echo "msg=UA2F 未安装"; status; exit 0; }; start_ua2f ;;
+	uamask)
+		[ -x "$INIT/UAmask" ] || { echo "msg=UA-Mask 未安装（opkg install UAmask_*.ipk 后再试）"; status; exit 0; }
+		start_uamask ;;
+	uamask-install-hint)
+		echo "msg=安装方法：把 UAmask_*.ipk 传到 /tmp，opkg install /tmp/UAmask_*.ipk" ;;
 	*) echo "msg=用法: start ua3f|ua2f" ;;
 	esac
 	status
@@ -227,9 +309,21 @@ stop)
 		uci -q set ua2f.enabled.enabled='0'; uci -q commit ua2f
 		echo "msg=UA2F 已停止（并取消开机自启）"
 		;;
+	uamask)
+		stop_uamask
+		[ -x "$INIT/UAmask" ] && "$INIT/UAmask" disable >/dev/null 2>&1
+		uci -q set UAmask.enabled.enabled='0'; uci -q commit UAmask
+		[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" stop >/dev/null 2>&1
+		[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" disable >/dev/null 2>&1
+		nft delete table ip ua2f_ttl 2>/dev/null
+		echo "msg=UA-Mask 已停止（并取消开机自启、撤掉 TTL 规则）"
+		;;
 	all)
+		stop_uamask
 		stop_ua3f
 		stop_ua2f
+		[ -x "$INIT/UAmask" ] && "$INIT/UAmask" disable >/dev/null 2>&1
+		uci -q set UAmask.enabled.enabled='0'; uci -q commit UAmask
 		[ -x "$INIT/ua3f" ] && "$INIT/ua3f" disable >/dev/null 2>&1
 		[ -x "$INIT/ua2f" ] && "$INIT/ua2f" disable >/dev/null 2>&1
 		[ -x "$INIT/ua2f-ttl" ] && "$INIT/ua2f-ttl" disable >/dev/null 2>&1

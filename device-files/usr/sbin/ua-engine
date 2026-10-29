@@ -1,6 +1,6 @@
 #!/bin/sh
 # =====================================================================
-#  UA 引擎开关（UA3F / UA2F 互斥；档位只有速度档）   by au学长 V：aauuo0
+#  UA 引擎开关（UA3F / UA2F 互斥；档位只有速度档）   by au VX：aauuo0
 #
 #  两个引擎都会抢同一份出站流量，同时开必然互相打架（UA 改两遍、
 #  规则互相覆盖），所以这里保证同一时刻只有一个在跑。
@@ -8,6 +8,7 @@
 #    ua-engine                看状态（含当前档位）
 #    ua-engine ua3f           切到 UA3F（TPROXY :1080，默认就是这个）
 #    ua-engine ua2f           切到 UA2F（NFQUEUE :10010）
+#    ua-engine uamask         切到 UA-Mask（轻量，只改 UA，TTL 由 ua2f-ttl 补）
 #    ua-engine off            两个都停（比如排查是不是它导致上不了网）
 #
 #    ua-engine fast           UA3F 速度档：只固定 TTL（nft 内核态，不进用户态）
@@ -17,13 +18,16 @@
 INIT=/etc/init.d
 
 stop_all() {
-	for e in ua3f ua2f ua2f-ttl; do
+	for e in ua3f ua2f ua2f-ttl UAmask; do
 		[ -x "$INIT/$e" ] && "$INIT/$e" stop >/dev/null 2>&1
 	done
 }
 
 running() {
 	pgrep -f "/usr/bin/$1" >/dev/null 2>&1 && echo yes || echo no
+}
+running_um() {
+	pgrep -f "/usr/bin/UAmask" >/dev/null 2>&1 && echo yes || echo no
 }
 
 # 档位：只剩速度档（只 TTL）。均衡档 / 隐蔽档已下线。
@@ -72,6 +76,18 @@ ua2f)
 	"$INIT/ua2f-ttl" start >/dev/null 2>&1
 	echo "已切到 UA2F（NFQUEUE :10010，只处理 HTTP，压力小得多）"
 	;;
+uamask)
+	if [ ! -x /usr/bin/UAmask ]; then
+		echo "UA-Mask 没装。安装：把 UAmask_*.ipk 传到 /tmp，然后 opkg install /tmp/UAmask_*.ipk" >&2
+		exit 1
+	fi
+	# 复用网页后端那套逻辑（停另外两个、写 UA、补 TTL）
+	if [ -x /usr/libexec/ua-engine-web ]; then
+		/usr/libexec/ua-engine-web start uamask | sed -n 's/^msg=//p'
+	else
+		echo "缺少 /usr/libexec/ua-engine-web" >&2; exit 1
+	fi
+	;;
 fast)
 	[ -x "$INIT/ua3f" ] || { echo "UA3F 没装，先 ua-engine ua3f" >&2; exit 1; }
 	preset "$1"
@@ -85,12 +101,19 @@ off|stop)
 	stop_all
 	uci -q set ua3f.enabled.enabled='0'
 	uci -q set ua2f.enabled.enabled='0'
-	uci -q commit ua3f; uci -q commit ua2f
+	uci -q set UAmask.enabled.enabled='0' 2>/dev/null
+	uci -q commit ua3f; uci -q commit ua2f; uci -q commit UAmask 2>/dev/null
+	nft delete table ip ua2f_ttl 2>/dev/null
 	echo "两个引擎都停了（自动登录 netcheck 不受影响）"
 	;;
 status|"")
 	echo "UA3F  进程：$(running ua3f)   配置启用：$(uci -q get ua3f.enabled.enabled)"
 	echo "UA2F  进程：$(running ua2f)   配置启用：$(uci -q get ua2f.enabled.enabled)"
+	if [ -x /usr/bin/UAmask ]; then
+		echo "Mask  进程：$(running_um)   配置启用：$(uci -q get UAmask.enabled.enabled)  端口：$(uci -q get UAmask.main.port)"
+	else
+		echo "Mask  未安装（opkg install UAmask_*.ipk）"
+	fi
 	echo "UA3F  模式：$(uci -q get ua3f.main.server_mode)  端口：$(uci -q get ua3f.main.port)"
 	echo "UA3F  档位：TTL=$(uci -q get ua3f.main.l3_rewrite_ttl)/$(uci -q get ua3f.main.l3_rewrite_ttl_value)" \
 		" TCPts=$(uci -q get ua3f.main.l3_rewrite_tcpts)" \
@@ -104,7 +127,7 @@ status|"")
 	fi
 	;;
 *)
-	echo "用法: ua-engine [status|ua3f|ua2f|fast|off|persona windows|iphone|android|mac]" >&2
+	echo "用法: ua-engine [status|ua3f|ua2f|uamask|fast|off|persona windows|iphone|android|mac]" >&2
 	exit 1
 	;;
 esac

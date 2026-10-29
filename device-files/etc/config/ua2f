@@ -1,10 +1,10 @@
 # =====================================================================
-#  UA2F（备用引擎）—— 默认关闭，用 ua-engine ua2f 才会启动
+#  UA2F（主引擎）—— 默认开启；ua-engine ua2f 切到的就是它
 #  人格和 UA3F 保持一致（Windows / TTL 128），切换引擎时特征不变
 # =====================================================================
 
 config ua2f 'enabled'
-	option enabled '0'
+	option enabled '1'
 
 config ua2f 'firewall'
 	option handle_fw '1'

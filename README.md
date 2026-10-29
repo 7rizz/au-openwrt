@@ -8,7 +8,7 @@
 
 | 版本 | `profile` 填 | 里面有什么 | 适合 |
 | --- | --- | --- | --- |
-| **校园网防检测版**（默认） | `campus` | 内置 **UA3F 3.7.0**（主引擎，TPROXY）+ UA2F 4.10.2（备用，默认关）+「顺枫公寓自动登录」+ 认证门户探测 + 中文界面 + 排错工具 | 就是要解决校园网共享检测、老掉线 |
+| **校园网防检测版**（默认） | `campus` | 内置 **UA2F 4.10.2**（主引擎，NFQUEUE，默认开）+ UA3F 3.7.0（备用，TPROXY，默认关）+「顺枫公寓自动登录」+ 认证门户探测 + 中文界面 + 排错工具 | 就是要解决校园网共享检测、老掉线 |
 | 全能版 | `full` | 在校园网版基础上，再加 OpenClash / PassWall / SSR-Plus / AdGuard Home / 多拨 / 限速等 | 家里自用，还要科学上网和去广告 |
 
 校园网那一套的完整用法（人格选择、验证、排错、回滚）见 👉 [docs/校园网防检测.md](docs/校园网防检测.md)
@@ -66,7 +66,7 @@
 
 ## 三、固件里装了什么
 
-**校园网防检测**：**UA3F 3.7.0**（主引擎，TPROXY :1080，改 UA + 固定 TTL + 清 TCP 时间戳 + IPID 归零，页面在「服务 → UA3F」）；UA2F 4.10.2（备引擎，默认关闭，`ua-engine ua2f` 可切换，两者互斥）
+**校园网防检测**：**UA2F 4.10.2**（主引擎，NFQUEUE :10010，改 UA，TTL 由 ua2f-ttl 用 nft 固定）；**UA3F 3.7.0**（备引擎，TPROXY :1080，改 UA + 固定 TTL + 清 TCP 时间戳 + IPID 归零，页面在「服务 → UA3F」）；UA2F 4.10.2（备引擎，默认关闭，`ua-engine ua2f` 可切换，两者互斥）
 **自己写的四个页面**（都在「服务」菜单）：**防检测引擎**（排第一，UA3F/UA2F 启停与档位控制台）、UA3F 防检测（详细设置）、连接设备、WAN MAC 工具
 **自动登录 / 探测**：顺枫公寓自动登录（netcheck）、认证门户探测（portal-probe）
 **科学上网（三种任选，默认都不自动启动）**：OpenClash、PassWall、SSR-Plus
@@ -74,7 +74,7 @@
 **网络增强**：mwan3 多拨、SQM 限速、UPnP、DDNS、流量统计（nlbwmon）、网络唤醒、定时重启
 **系统工具**：网页终端 ttyd、自定义命令、SFTP（可用 WinSCP）、curl、htop、nano、iperf3
 **界面**：Argon 主题 + 全中文
-**默认设置**：固件名（LuCI 状态页「固件版本」）`by au学长 v：aauuo0 倒卖司马`、主机名（LuCI 左上角）`aauuo0`、后台 `192.168.1.1`、后台密码 `root`、2.4G WiFi `破解校园网V：aauuo0`、5G WiFi `破解校园网联系v：aauuo0`、WiFi 密码 `aaaauuuu`、无线开机自动启动
+**默认设置**：固件名（LuCI 状态页「固件版本」）`by au VX：aauuo0 倒卖司马`、主机名（LuCI 左上角）`aauuo0`、后台 `192.168.1.1`、后台密码 `root`、2.4G WiFi `破解校园网V：aauuo0`、5G WiFi `破解校园网联系v：aauuo0`、WiFi 密码 `aaaauuuu`、无线开机自动启动
 
 > 内存只有 128MB，OpenClash 和 AdGuard Home 同时开着会比较吃紧，建议按需只开一个。
 > OpenClash 的内核（Mihomo）比较大，装好后第一次要在它的界面里点一次「更新内核」下载。

@@ -1,7 +1,7 @@
 'use strict';
 'require view';
 
-/* 连接设备：内嵌独立 CGI 页面（不经 rpcd/ACL） by au学长 V：aauuo0
+/* 连接设备：内嵌独立 CGI 页面（不经 rpcd/ACL） by au VX：aauuo0
  *
  * 尺寸说明：LuCI 顶部有 60px 左右的头部、内容区自己还有 padding，
  * 老写法 calc(100vh - 130px) 在窗口矮的时候会同时出现「外层滚动条 + iframe 内滚动条」，
