@@ -96,6 +96,12 @@ start_service() {
     procd_set_param respawn
     procd_set_param stdout 1
     procd_set_param stderr 1
+    # Go 运行时内存上限（纯性能补丁，不改功能）
+    # AC2100 只有 128MB，UA3F 实测 RSS 会到 22~25MB；叠加内核 buffer 后
+    # /proc/meminfo 的 MemAvailable 会掉到 2MB 级别，紧接着整机被看门狗复位。
+    # GOMEMLIMIT 让 GC 提前回收、GOGC 压低堆峰值；超限只是变慢，不会 OOM。
+    procd_append_param env GOGC="40"
+    procd_append_param env GOMEMLIMIT="25165824"
     procd_set_param limits nproc="unlimited" as="unlimited" memlock="unlimited" nofile="65535 65535"
     procd_set_param pidfile "/var/run/$NAME.pid"
 
